@@ -8,6 +8,26 @@ export function normalizeWhitespace(s: string): string {
   return s.replace(/\s+/g, ' ').trim();
 }
 
+// Strip HTML tags + decode a handful of common entities. Sources like Adzuna
+// wrap matched terms in <strong>, and ATS descriptions are full HTML.
+export function stripHtml(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const text = input
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6])\s*>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return text === '' ? null : text;
+}
+
 // Lowercase, strip accents, drop punctuation, collapse whitespace.
 export function slugifyLoose(s: string): string {
   return s
