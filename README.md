@@ -54,8 +54,16 @@ src/app/(app)/                      protected surfaces: needs-action · tracker 
 src/app/auth/                       callback · confirm · signout
 src/app/api/                        import · cron/ingest · applications/export
 tests/                              vitest suites (79 tests)
-docs/cowork-import.md               the Cowork on-demand recipe
+docs/                               setup · testing · database · code-structure · cowork-import
 ```
+
+## Documentation
+
+- [`docs/setup.md`](docs/setup.md) — full setup: API keys, env, Supabase, Vercel + Cron.
+- [`docs/testing.md`](docs/testing.md) — manual walkthrough + the `tests/` suite.
+- [`docs/database.md`](docs/database.md) — ER diagram, tables, RLS, relationships.
+- [`docs/code-structure.md`](docs/code-structure.md) — what lives where and why.
+- [`docs/cowork-import.md`](docs/cowork-import.md) — the Cowork on-demand import recipe.
 
 ---
 
