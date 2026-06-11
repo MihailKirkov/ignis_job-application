@@ -61,6 +61,12 @@ export function SideNav({
       </ul>
 
       <div className="mt-auto border-t border-border pt-3">
+        <Link
+          href="/legal"
+          className="block px-3 pb-1 text-xs text-faint transition-colors hover:text-muted"
+        >
+          Sources &amp; attribution
+        </Link>
         <div className="truncate px-3 text-xs text-faint" title={email}>
           {email}
         </div>
