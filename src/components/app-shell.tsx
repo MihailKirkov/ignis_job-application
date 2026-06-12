@@ -9,6 +9,7 @@ const NAV = [
   { href: '/tracker', label: 'Tracker', hint: 'T' },
   { href: '/discovery', label: 'Discovery', hint: 'D' },
   { href: '/sources', label: 'Sources', hint: 'S' },
+  { href: '/profile', label: 'Profile', hint: 'P' },
 ];
 
 export function SideNav({
