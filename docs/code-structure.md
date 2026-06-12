@@ -101,6 +101,9 @@ aggregate:
 - `applications.ts` — CRUD, `clearNextAction`, `setStatus`. Form actions return
   `{ ok, error }` for `useActionState`; imperative ones (delete/clear) are called
   via `useTransition`.
+- `profile.ts` — `saveProfile` (upsert the 1:1 profile + pasted CV text),
+  `uploadCv` (store the PDF in the private `cvs` bucket + extract its text with
+  `unpdf`), `removeCvFile`. Pure parsing/validation lives in `src/lib/profile.ts`.
 - `jobs.ts` — `setJobState`, `promoteJob` (creates the linked application), and
   `runUserIngestion` (the manual "Refresh inbox", RLS-scoped to the user).
 - `sources.ts` — create/toggle/delete sources (parses the config JSON).
@@ -116,6 +119,10 @@ Each action calls `requireUser()`, mutates via the RLS-scoped server client, the
   enums from here, don't re-declare them.
 - `utils.ts` — `cn()`, date/salary/status formatting, `todayISO`, overdue/terminal
   predicates. Pure, used by both server and client code.
+- `profile.ts` — pure profile/CV helpers: CV text sanitize/clamp, list & links
+  parse/serialize, seniority/work-mode/salary normalization, and
+  `buildProfilePayload`/`validateProfile`. No React, no DB; unit-tested in
+  `tests/profile.test.ts`.
 
 ---
 
@@ -150,6 +157,7 @@ legal/                public sources & attribution page
   tracker/            applications pipeline
   discovery/          the inbox (tabs, filters, presets)
   sources/            ingestion config
+  profile/            profile + CV (form + PDF upload/extract)
 
 api/
   import/route.ts             session-protected normalized-job upsert
@@ -182,7 +190,8 @@ Split by who renders them:
   (delete/clear), `tracker-toolbar.tsx` (search/status), `job-state-controls.tsx`
   (save/dismiss/promote), `filter-panel.tsx`, `preset-bar.tsx`,
   `discovery-actions.tsx` (refresh + paste-import), `add-source-form.tsx`,
-  `source-controls.tsx`, `app-shell.tsx` (nav).
+  `source-controls.tsx`, `profile-form.tsx` (the profile editor),
+  `cv-panel.tsx` (CV upload/replace), `app-shell.tsx` (nav).
 
 Pattern: a server component (e.g. `application-card.tsx`) renders display markup and
 drops in small client buttons (`EditApplicationButton`, `DeleteApplicationButton`)
@@ -234,9 +243,10 @@ job appears under Discovery → New.
 
 ## Testing & the green gate
 
-Pure logic in `src/lib/discovery` and `src/lib/sources` is unit-tested in `tests/`
-(see [`testing.md`](./testing.md)). Components, actions, and RLS are covered by the
-manual walkthrough plus `typecheck` + `build`. Before "done":
+Pure logic in `src/lib/discovery`, `src/lib/sources`, and `src/lib/profile` is
+unit-tested in `tests/` (see [`testing.md`](./testing.md)). Components, actions,
+and RLS are covered by the manual walkthrough plus `typecheck` + `build`. Before
+"done":
 
 ```bash
 npm run typecheck && npm run lint && npm test && npm run build

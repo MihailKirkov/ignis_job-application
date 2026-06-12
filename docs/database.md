@@ -1,9 +1,11 @@
 # Database
 
-Postgres on Supabase. Four application tables, all owned by a Supabase Auth user
-and protected by Row-Level Security. The single source of truth is the migration
-`supabase/migrations/0001_init.sql`; the TypeScript mirror is
-`src/types/database.ts`. This doc explains the shape and the *why*.
+Postgres on Supabase. Five application tables, all owned by a Supabase Auth user
+and protected by Row-Level Security. The source of truth is the migrations under
+`supabase/migrations/` (`0001_init.sql` for the original four tables,
+`0002_profiles.sql` for `profiles` + the private CV storage bucket); the
+TypeScript mirror is `src/types/database.ts`. This doc explains the shape and the
+*why*.
 
 ---
 
@@ -11,6 +13,7 @@ and protected by Row-Level Security. The single source of truth is the migration
 
 ```mermaid
 erDiagram
+    USERS ||--o| PROFILES      : has
     USERS ||--o{ APPLICATIONS  : owns
     USERS ||--o{ JOBS          : owns
     USERS ||--o{ SOURCES       : owns
@@ -85,6 +88,26 @@ erDiagram
         timestamptz created_at
         timestamptz updated_at
     }
+
+    PROFILES {
+        uuid    user_id PK "-> auth.users.id, on delete cascade (one row per user)"
+        text    full_name
+        text    headline
+        text    location
+        text    summary
+        text    seniority "intern | junior | medior | senior | lead | principal | null"
+        text_   skills "text[]"
+        text_   target_roles "text[]"
+        text_   target_locations "text[]"
+        numeric target_salary_min
+        text_   work_modes "text[], subset of On-site | Hybrid | Remote"
+        text_   languages "text[]"
+        jsonb   links "[{ label, url }]"
+        text    cv_text "extracted/pasted plain text"
+        text    cv_file_path "path in the private 'cvs' Storage bucket"
+        timestamptz created_at
+        timestamptz updated_at
+    }
 ```
 
 > `USERS` is Supabase's built-in `auth.users` table — we don't define it, we only
@@ -95,8 +118,10 @@ erDiagram
 
 ## Relationships & lifecycle
 
-- **Ownership (4×):** `applications`, `jobs`, `sources`, `saved_filters` each
-  belong to exactly one user via `user_id`. This is what RLS keys on.
+- **Ownership (5×):** `applications`, `jobs`, `sources`, `saved_filters`, and
+  `profiles` each belong to a user via `user_id`. This is what RLS keys on.
+  `profiles` is the one **1:1** table — `user_id` is its primary key, so there is
+  at most one profile row per user.
 - **Promotion (`jobs` → `applications`):** `applications.job_id` is a **nullable**
   FK to `jobs.id`. When you *Promote* a discovered job, a new application row is
   created with `job_id` set and the job's `state` flipped to `promoted`. Manually
@@ -156,11 +181,26 @@ Index: `(user_id, enabled)`.
 `criteriaToParams` in `src/lib/discovery/filter-params.ts`), so applying a preset is
 just pushing those keys onto the discovery URL. Index: `(user_id)`.
 
+### `profiles` — the owner's profile + CV (1:1)
+
+One row per user, keyed directly by `user_id` (no separate `id`). Holds identity
+(`full_name`, `headline`, `location`, `summary`), `seniority` (check-constrained
+to the ladder, or null), array preferences (`skills`, `target_roles`,
+`target_locations`, `languages`, and `work_modes` — the latter check-constrained
+to a subset of `On-site | Hybrid | Remote`), `target_salary_min` (numeric), and
+`links jsonb` (`[{ label, url }]`).
+
+The CV lives as **plain text** in `cv_text` — populated either by pasting or by
+extracting an uploaded PDF. `cv_file_path` points at the uploaded PDF in the
+private `cvs` Storage bucket. The pure parsing/validation/clamping for all of
+this lives in `src/lib/profile.ts`; writes go through `actions/profile.ts`. Added
+in migration `0002_profiles.sql`.
+
 ---
 
 ## Row-Level Security
 
-RLS is **enabled on all four tables**, and each has four owner-only policies
+RLS is **enabled on all five tables**, and each has four owner-only policies
 (select / insert / update / delete) of the form:
 
 ```sql
@@ -183,6 +223,11 @@ Consequences worth remembering:
   run, so it uses the **service-role** client (`src/lib/supabase/admin.ts`), which
   bypasses RLS. It is server-only and writes each job with an explicit `user_id`.
   Never expose that key to the browser.
+- **Storage is RLS'd too:** the private `cvs` bucket has owner-only policies on
+  `storage.objects` keyed on the first path segment
+  (`(storage.foldername(name))[1] = auth.uid()::text`). App code writes to
+  `"<user_id>/cv.pdf"`, so a user can only read/write their own folder. The
+  bucket is **not public** — there is no anonymous URL.
 
 ---
 

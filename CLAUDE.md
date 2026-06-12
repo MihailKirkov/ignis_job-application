@@ -25,18 +25,25 @@ owner for now) — every row is scoped by `user_id` and enforced with RLS.
 
 ```
 supabase/migrations/0001_init.sql   # full schema + RLS + updated_at triggers
+supabase/migrations/0002_profiles.sql # profiles table + RLS + private 'cvs' storage bucket
 src/types/database.ts               # hand-written DB types (type aliases, not interfaces)
 src/lib/supabase/                   # the three clients + auth helpers
-src/lib/constants.ts                # enums (statuses, channels, modes, source meta)
+src/lib/constants.ts                # enums (statuses, channels, modes, seniority, source meta)
 src/lib/utils.ts                    # dates, salary/status formatting, cn()
-src/lib/actions/                    # 'use server' mutations (applications, …)
+src/lib/profile.ts                  # pure profile/CV helpers (sanitize, parse, validate; unit-tested)
+src/lib/actions/                    # 'use server' mutations (applications, profile, …)
 src/lib/sources/                    # NormalizedJob shape + per-source fetchers
 src/lib/discovery/                  # normalize, dedupe, filters (pure + unit-tested)
-src/app/(app)/                      # protected surfaces: needs-action, tracker, discovery, sources
+src/app/(app)/                      # protected surfaces: needs-action, tracker, discovery, sources, profile
 src/app/auth/                       # callback / confirm / signout routes
 src/app/api/                        # import + cron + export route handlers
-tests/                              # vitest: normalize, dedupe, filters (+ sources)
+tests/                              # vitest: normalize, dedupe, filters, profile (+ sources)
 ```
+
+Profile + CV: `profiles` is one row per user (PK `user_id`). CV text lands in
+`cv_text` two ways — pasted, or extracted from a PDF uploaded to the private
+`cvs` Storage bucket (RLS per-user folder) using `unpdf` (serverless PDF.js, no
+native binaries). Both paths go through Server Actions in `actions/profile.ts`.
 
 ## Working rules (for future changes)
 
