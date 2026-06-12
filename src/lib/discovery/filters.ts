@@ -20,6 +20,10 @@ export interface FilterCriteria {
   postedWithinDays?: number;
   sources?: string[];
   language?: 'en' | 'nl'; // naive guess
+
+  // Minimum AI fit score (0..100). Unscored jobs are excluded when this is set,
+  // since it's an explicit "only show good matches" opt-in.
+  minFit?: number;
 }
 
 // Brainport-region towns treated as "around Eindhoven" (we have no geocoder, so
@@ -178,6 +182,11 @@ export function matchesFilter(
 
   if (criteria.language) {
     if (guessLanguage(job) !== criteria.language) return false;
+  }
+
+  if (typeof criteria.minFit === 'number') {
+    // Exclude unscored jobs (no fit known) when a minimum is requested.
+    if (job.fit_score == null || job.fit_score < criteria.minFit) return false;
   }
 
   return true;

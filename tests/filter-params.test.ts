@@ -25,6 +25,7 @@ describe('criteriaFromParams', () => {
         days: '14',
         src: 'lever,greenhouse',
         lang: 'en',
+        minFit: '70',
       }),
     );
     expect(c).toEqual<FilterCriteria>({
@@ -39,7 +40,13 @@ describe('criteriaFromParams', () => {
       postedWithinDays: 14,
       sources: ['lever', 'greenhouse'],
       language: 'en',
+      minFit: 70,
     });
+  });
+
+  it('clamps minFit to 100 and drops non-positive values', () => {
+    expect(criteriaFromParams(params({ minFit: '150' })).minFit).toBe(100);
+    expect(criteriaFromParams(params({ minFit: '0' })).minFit).toBeUndefined();
   });
 
   it('drops invalid enum values and the "any" scope', () => {
@@ -69,6 +76,7 @@ describe('criteriaToParams / roundtrip', () => {
       mode: ['Remote'],
       postedWithinDays: 7,
       sources: ['remoteok'],
+      minFit: 75,
     };
     const back = criteriaFromParams(params(criteriaToParams(original)));
     expect(back).toEqual(original);

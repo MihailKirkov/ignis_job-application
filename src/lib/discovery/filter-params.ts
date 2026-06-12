@@ -19,6 +19,7 @@ export function jobRowToNormalized(r: JobRow): NormalizedJob {
     description: r.description,
     posted_at: r.posted_at,
     raw: r.raw,
+    fit_score: r.fit_score,
   };
 }
 
@@ -85,6 +86,9 @@ export function criteriaFromParams(params: Getter): FilterCriteria {
   const lang = params.get('lang');
   if (lang === 'en' || lang === 'nl') criteria.language = lang;
 
+  const minFit = Number(params.get('minFit'));
+  if (Number.isFinite(minFit) && minFit > 0) criteria.minFit = Math.min(100, minFit);
+
   return criteria;
 }
 
@@ -103,6 +107,7 @@ export function criteriaToParams(criteria: FilterCriteria): Record<string, strin
   if (typeof criteria.postedWithinDays === 'number') out.days = String(criteria.postedWithinDays);
   if (criteria.sources?.length) out.src = criteria.sources.join(',');
   if (criteria.language) out.lang = criteria.language;
+  if (typeof criteria.minFit === 'number') out.minFit = String(criteria.minFit);
   return out;
 }
 

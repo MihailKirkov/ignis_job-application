@@ -16,6 +16,9 @@ export interface NormalizedJob {
   description: string | null;
   posted_at: string | null; // ISO 8601
   raw: Record<string, unknown>;
+  // Optional AI fit score (0..100). Set only when adapting a stored JobRow that
+  // has been scored; source fetchers leave it undefined. Used by the min-fit filter.
+  fit_score?: number | null;
 }
 
 // A source knows how to fetch + normalize. `fetchJobs` returns normalized jobs;

@@ -128,6 +128,23 @@ describe('source + language', () => {
   });
 });
 
+describe('minFit', () => {
+  it('keeps jobs at/above the fit floor', () => {
+    expect(matchesFilter(job({ fit_score: 80 }), { minFit: 70 })).toBe(true);
+    expect(matchesFilter(job({ fit_score: 70 }), { minFit: 70 })).toBe(true);
+  });
+  it('rejects jobs below the floor', () => {
+    expect(matchesFilter(job({ fit_score: 60 }), { minFit: 70 })).toBe(false);
+  });
+  it('rejects unscored jobs when a floor is set', () => {
+    expect(matchesFilter(job({}), { minFit: 70 })).toBe(false);
+    expect(matchesFilter(job({ fit_score: null }), { minFit: 70 })).toBe(false);
+  });
+  it('ignores fit when no floor is set', () => {
+    expect(matchesFilter(job({}), {})).toBe(true);
+  });
+});
+
 describe('filterJobs', () => {
   it('combines criteria across a list', () => {
     const jobs = [
