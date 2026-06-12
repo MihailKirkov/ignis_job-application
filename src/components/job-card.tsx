@@ -15,14 +15,29 @@ function FitBadge({ score, verdict }: { score: number; verdict: ScoreVerdict | n
   );
 }
 
+// In read-only mode (the public /demo) we keep the full visual — fit badge, AI
+// summary, source — but drop every control that would hit a Server Action.
+function DemoStatePill({ state }: { state: JobRow['state'] }) {
+  if (state === 'promoted') {
+    return <span className="text-xs text-status-offer">✓ Promoted to pipeline</span>;
+  }
+  return (
+    <span className="rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] capitalize text-muted">
+      {state}
+    </span>
+  );
+}
+
 export function JobCard({
   job,
   aiEnabled = false,
   currentProfileHash = null,
+  readOnly = false,
 }: {
   job: JobRow;
   aiEnabled?: boolean;
   currentProfileHash?: string | null;
+  readOnly?: boolean;
 }) {
   const salary = formatSalaryRange(job.salary_min, job.salary_max, job.currency);
   const sourceLabel = SOURCE_META[job.source as keyof typeof SOURCE_META]?.label ?? job.source;
@@ -111,9 +126,13 @@ export function JobCard({
           <span className="font-mono text-[11px] text-faint">
             {job.posted_at ? `posted ${formatDate(job.posted_at)}` : `seen ${formatDate(job.ingested_at)}`}
           </span>
-          {aiEnabled ? <JobScoreButton jobId={job.id} scored={scored} /> : null}
+          {aiEnabled && !readOnly ? <JobScoreButton jobId={job.id} scored={scored} /> : null}
         </div>
-        <JobStateControls id={job.id} state={job.state} />
+        {readOnly ? (
+          <DemoStatePill state={job.state} />
+        ) : (
+          <JobStateControls id={job.id} state={job.state} />
+        )}
       </div>
     </div>
   );

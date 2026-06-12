@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import type { Database } from '@/types/database';
 
 // Paths that are always reachable without a session.
-const PUBLIC_PATHS = ['/login', '/auth', '/legal'];
+const PUBLIC_PATHS = ['/login', '/auth', '/legal', '/demo'];
 
 function isPublic(pathname: string): boolean {
   if (pathname === '/') return true;

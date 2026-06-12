@@ -11,9 +11,12 @@ function Meta({ children }: { children: React.ReactNode }) {
 export function ApplicationCard({
   row,
   highlightAction = false,
+  readOnly = false,
 }: {
   row: ApplicationRow;
   highlightAction?: boolean;
+  // The public /demo renders cards without any write controls (Edit/Delete/Clear).
+  readOnly?: boolean;
 }) {
   const overdue = isOverdue(row.next_action_date);
   const meta = [row.location, row.mode, row.channel].filter(Boolean);
@@ -81,7 +84,7 @@ export function ApplicationCard({
               </span>
             ) : null}
           </div>
-          {row.next_action_date ? <ClearActionButton id={row.id} /> : null}
+          {row.next_action_date && !readOnly ? <ClearActionButton id={row.id} /> : null}
         </div>
       ) : null}
 
@@ -89,10 +92,12 @@ export function ApplicationCard({
         <div className="flex items-center gap-3 font-mono text-[11px] text-faint">
           {row.date_applied ? <span>applied {formatDate(row.date_applied)}</span> : null}
         </div>
-        <div className="flex items-center gap-1">
-          <EditApplicationButton row={row} />
-          <DeleteApplicationButton id={row.id} />
-        </div>
+        {readOnly ? null : (
+          <div className="flex items-center gap-1">
+            <EditApplicationButton row={row} />
+            <DeleteApplicationButton id={row.id} />
+          </div>
+        )}
       </div>
     </div>
   );
