@@ -19,6 +19,12 @@ const SOURCES = [
   { name: 'Lever', url: 'https://www.lever.co', note: 'Public postings API.' },
   { name: 'Ashby', url: 'https://www.ashbyhq.com', note: 'Public posting API.' },
   { name: 'Workable', url: 'https://www.workable.com', note: 'Public careers API.' },
+  { name: 'Recruitee', url: 'https://www.recruitee.com', note: 'Public Careers Site API.' },
+  {
+    name: 'SmartRecruiters',
+    url: 'https://www.smartrecruiters.com',
+    note: 'Public Posting API.',
+  },
 ];
 
 export default function LegalPage() {

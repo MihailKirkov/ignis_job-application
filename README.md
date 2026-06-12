@@ -27,9 +27,10 @@ only.
   flagged, one-click clear. Pipeline stat counts, status + search filters, sort
   (next-action asc → date-applied desc), JSON export.
 - **Discovery ingestion** from Adzuna (official), Arbeitnow, Remotive, RemoteOK,
-  and public ATS company boards (Greenhouse, Lever, Ashby, Workable). Everything
-  normalized into one shape; raw payload kept as `jsonb`; deduped by
-  `(source, external_id)` and a fuzzy company+title+location key.
+  and public ATS company boards (Greenhouse, Lever, Ashby, Workable, Recruitee,
+  SmartRecruiters). Everything normalized into one shape; raw payload kept as
+  `jsonb`; deduped by `(source, external_id)` and a fuzzy
+  company+title+location key.
 - Per-job state (new / saved / dismissed / promoted). **Promote** creates a
   pre-filled application linked back via `job_id`.
 - **Saveable filter presets:** keyword include/exclude, location scope
@@ -47,7 +48,7 @@ only.
 supabase/migrations/0001_init.sql   full schema + RLS + updated_at triggers
 src/types/database.ts               hand-written DB types
 src/lib/supabase/                   browser / server / proxy / admin clients + auth
-src/lib/sources/                    NormalizedJob shape + 8 source fetchers + registry
+src/lib/sources/                    NormalizedJob shape + 10 source fetchers + registry
 src/lib/discovery/                  normalize · dedupe · filters · ingest · import-schema (pure, tested)
 src/lib/actions/                    server actions: applications · jobs · sources · filters
 src/app/(app)/                      protected surfaces: needs-action · tracker · discovery · sources
@@ -63,6 +64,7 @@ docs/                               setup · testing · database · code-structu
 - [`docs/testing.md`](docs/testing.md) — manual walkthrough + the `tests/` suite.
 - [`docs/database.md`](docs/database.md) — ER diagram, tables, RLS, relationships.
 - [`docs/code-structure.md`](docs/code-structure.md) — what lives where and why.
+- [`docs/wireframes.md`](docs/wireframes.md) — planned design of each page (ASCII layouts).
 - [`docs/cowork-import.md`](docs/cowork-import.md) — the Cowork on-demand import recipe.
 
 ---
@@ -173,6 +175,8 @@ boards), then **Refresh inbox**.
 | Lever      | `{ "token": "netflix", "name": "Netflix" }` | `jobs.lever.co/<token>`          |
 | Ashby      | `{ "token": "ramp", "name": "Ramp" }`     | `jobs.ashbyhq.com/<token>`         |
 | Workable   | `{ "token": "acme", "name": "Acme" }`     | `apply.workable.com/<token>`       |
+| Recruitee  | `{ "token": "acme", "name": "Acme" }`     | `<token>.recruitee.com`            |
+| SmartRecruiters | `{ "token": "bosch", "name": "Bosch" }` | `jobs.smartrecruiters.com/<token>` |
 | Adzuna     | `{ "query": "react", "where": "Eindhoven", "country": "nl", "salary_min": 50000, "max_days_old": 14, "full_time": true }` | use `"country": "gb"` for a remote/UK query |
 
 **A brand-new provider** — add a fetcher:
@@ -207,6 +211,8 @@ feeds (Remotive, RemoteOK) keep the original `url` + source label.
 | Greenhouse | `boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true`| Public job-board API.                                |
 | Lever      | `api.lever.co/v0/postings/{token}?mode=json`                  | Public postings API.                                 |
 | Ashby      | `api.ashbyhq.com/posting-api/job-board/{token}`               | Public posting API.                                  |
+| Recruitee  | `{token}.recruitee.com/api/offers/`                          | Public Careers Site API, no key.                     |
+| SmartRecruiters | `api.smartrecruiters.com/v1/companies/{token}/postings` | Public Posting API, no key.                          |
 
 ### Could not fully verify
 
@@ -215,6 +221,15 @@ feeds (Remotive, RemoteOK) keep the original `url` + source label.
   accounts but field names vary and it isn't a stable documented contract. Treat
   it as best-effort and adjust `src/lib/sources/workable.ts` if a given account
   returns a different shape.
+
+### Evaluated but not integrated
+
+- **Homerun** (NL ATS) was requested, but it exposes **no public, no-auth
+  job-board endpoint**: its public API (`api.homerun.co/v2`) requires a Bearer API
+  key (a real secret), and the only unauthenticated option is an undocumented XML
+  feed. Both break this project's source rules (public endpoints only; ATS tokens
+  are public board slugs, not secrets), so **SmartRecruiters** — verified public,
+  no-auth, and widely used by NL/EU employers — was added in its place.
 
 ---
 

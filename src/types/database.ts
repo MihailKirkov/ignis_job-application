@@ -50,7 +50,9 @@ export type SourceType =
   | 'greenhouse'
   | 'lever'
   | 'ashby'
-  | 'workable';
+  | 'workable'
+  | 'recruitee'
+  | 'smartrecruiters';
 
 export type JobRow = {
   id: string;

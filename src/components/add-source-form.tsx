@@ -18,6 +18,8 @@ const EXAMPLE_CONFIG: Record<SourceType, string> = {
   lever: '{ "token": "netflix", "name": "Netflix" }',
   ashby: '{ "token": "ramp", "name": "Ramp" }',
   workable: '{ "token": "acme", "name": "Acme" }',
+  recruitee: '{ "token": "acme", "name": "Acme" }',
+  smartrecruiters: '{ "token": "bosch", "name": "Bosch" }',
 };
 
 export function AddSourceButton() {

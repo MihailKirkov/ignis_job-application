@@ -7,6 +7,8 @@ import { fetchGreenhouse } from '@/lib/sources/greenhouse';
 import { fetchLever } from '@/lib/sources/lever';
 import { fetchAshby } from '@/lib/sources/ashby';
 import { fetchWorkable } from '@/lib/sources/workable';
+import { fetchRecruitee } from '@/lib/sources/recruitee';
+import { fetchSmartRecruiters } from '@/lib/sources/smartrecruiters';
 
 // Minimal fetch stub. Returns the given JSON body; records the URL it was called with.
 function stub(body: unknown, init: { ok?: boolean; status?: number } = {}) {
@@ -249,5 +251,117 @@ describe('workable', () => {
       mode: 'Remote',
       location: 'Eindhoven, Netherlands',
     });
+  });
+});
+
+describe('recruitee', () => {
+  const body = {
+    offers: [
+      {
+        id: 4242,
+        title: 'Backend Engineer',
+        slug: 'backend-engineer',
+        status: 'published',
+        careers_url: 'https://acme.recruitee.com/o/backend-engineer',
+        description: '<p>Build &amp; ship Go services</p>',
+        published_at: '2026-06-05T09:00:00Z',
+        hybrid: true,
+        locations: [{ city: 'Eindhoven', country: 'Netherlands' }],
+        salary: { min: '60000', max: '80000', currency: 'EUR', period: 'year' },
+      },
+      { id: 99, title: 'Draft role', status: 'draft' },
+    ],
+  };
+
+  it('normalizes, honours hybrid, parses salary and skips drafts', async () => {
+    const { impl, calls } = stub(body);
+    const jobs = await fetchRecruitee({ token: 'acme', name: 'Acme' }, { fetchImpl: impl });
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      source: 'recruitee',
+      external_id: '4242',
+      title: 'Backend Engineer',
+      company: 'Acme',
+      location: 'Eindhoven, Netherlands',
+      mode: 'Hybrid',
+      salary_min: 60000,
+      salary_max: 80000,
+      currency: 'EUR',
+      url: 'https://acme.recruitee.com/o/backend-engineer',
+    });
+    expect(jobs[0].description).toBe('Build & ship Go services');
+    expect(calls[0]).toBe('https://acme.recruitee.com/api/offers/');
+  });
+
+  it('drops sub-1000 (hourly) salary figures', async () => {
+    const { impl } = stub({
+      offers: [
+        {
+          id: 1,
+          title: 'Contractor',
+          status: 'published',
+          salary: { min: '40', max: '60', currency: 'EUR', period: 'hour' },
+        },
+      ],
+    });
+    const jobs = await fetchRecruitee({ token: 'acme' }, { fetchImpl: impl });
+    expect(jobs[0]).toMatchObject({ salary_min: null, salary_max: null, currency: null });
+  });
+
+  it('throws without a token', async () => {
+    await expect(fetchRecruitee({}, {})).rejects.toThrow(/subdomain/);
+  });
+});
+
+describe('smartrecruiters', () => {
+  const body = {
+    offset: 0,
+    limit: 100,
+    totalFound: 1,
+    content: [
+      {
+        id: 744000131436848,
+        uuid: 'a8a3b1a8-d3d2-4470-aa87-c5b6227eae12',
+        name: 'Senior Security Engineer',
+        refNumber: 'REF2010Z',
+        releasedDate: '2026-06-10T12:07:26.341Z',
+        company: { identifier: 'acme', name: 'Acme Inc' },
+        location: { city: 'Amsterdam', region: 'North Holland', country: 'nl', remote: false },
+      },
+    ],
+  };
+
+  it('maps content[], builds the public posting URL and prefers config name', async () => {
+    const { impl, calls } = stub(body);
+    const jobs = await fetchSmartRecruiters({ token: 'acme', name: 'Acme' }, { fetchImpl: impl });
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      source: 'smartrecruiters',
+      external_id: '744000131436848',
+      title: 'Senior Security Engineer',
+      company: 'Acme',
+      location: 'Amsterdam, North Holland',
+      url: 'https://jobs.smartrecruiters.com/acme/744000131436848',
+    });
+    expect(jobs[0].posted_at).toBe('2026-06-10T12:07:26.341Z');
+    expect(calls[0]).toContain('/v1/companies/acme/postings');
+  });
+
+  it('forces Remote mode and strips the REMOTE region token from the location', async () => {
+    const { impl } = stub({
+      content: [
+        {
+          id: 1,
+          name: 'Remote Dev',
+          location: { city: 'Poland', region: 'REMOTE', country: 'pl', remote: true },
+        },
+      ],
+    });
+    const jobs = await fetchSmartRecruiters({ token: 'acme' }, { fetchImpl: impl });
+    expect(jobs[0]).toMatchObject({ mode: 'Remote', location: 'Poland', company: 'acme' });
+  });
+
+  it('throws without a token', async () => {
+    await expect(fetchSmartRecruiters({}, {})).rejects.toThrow(/company identifier/);
   });
 });

@@ -8,6 +8,8 @@ import { fetchGreenhouse } from './greenhouse';
 import { fetchLever } from './lever';
 import { fetchAshby } from './ashby';
 import { fetchWorkable } from './workable';
+import { fetchRecruitee } from './recruitee';
+import { fetchSmartRecruiters } from './smartrecruiters';
 
 export type SourceFetcher = (
   config: Record<string, unknown>,
@@ -23,6 +25,8 @@ export const SOURCE_FETCHERS: Record<SourceType, SourceFetcher> = {
   lever: fetchLever,
   ashby: fetchAshby,
   workable: fetchWorkable,
+  recruitee: fetchRecruitee,
+  smartrecruiters: fetchSmartRecruiters,
 };
 
 export function getFetcher(type: SourceType): SourceFetcher | undefined {

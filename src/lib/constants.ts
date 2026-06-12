@@ -64,6 +64,8 @@ export const SOURCE_TYPES: SourceType[] = [
   'lever',
   'ashby',
   'workable',
+  'recruitee',
+  'smartrecruiters',
 ];
 
 // Tailwind token name per status (maps to --color-status-* in globals.css).
@@ -129,5 +131,17 @@ export const SOURCE_META: Record<
     needsToken: true,
     configHint: 'token = the account subdomain',
     apiNote: 'Public careers API (endpoint shape varies — see README).',
+  },
+  recruitee: {
+    label: 'Recruitee (company board)',
+    needsToken: true,
+    configHint: 'token = the careers-site subdomain, e.g. "acme" for acme.recruitee.com',
+    apiNote: 'Public Careers Site API: {token}.recruitee.com/api/offers (no key).',
+  },
+  smartrecruiters: {
+    label: 'SmartRecruiters (company board)',
+    needsToken: true,
+    configHint: 'token = the public company identifier, e.g. "bosch"',
+    apiNote: 'Public Posting API: api.smartrecruiters.com/v1/companies/{token}/postings (no key).',
   },
 };
