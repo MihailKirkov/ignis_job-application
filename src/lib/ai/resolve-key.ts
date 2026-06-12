@@ -33,14 +33,14 @@ export async function resolveAnthropicKey(
   return process.env.ANTHROPIC_API_KEY ?? null;
 }
 
-// Cheap availability check for the UI (no decryption): does the user have a key,
-// or is an env fallback configured?
-export async function hasAnthropicKey(supabase: DB, userId: string): Promise<boolean> {
-  if (process.env.ANTHROPIC_API_KEY) return true;
-  const { data } = await supabase
-    .from('user_secrets')
-    .select('user_id')
-    .eq('user_id', userId)
-    .maybeSingle();
+// Does the signed-in user have their own stored key? (RLS scopes the row.)
+export async function hasOwnAnthropicKey(supabase: DB): Promise<boolean> {
+  const { data } = await supabase.from('user_secrets').select('user_id').maybeSingle();
   return Boolean(data);
+}
+
+// Is scoring available at all for the UI (own key OR env fallback)? No decryption.
+export async function hasAnthropicKey(supabase: DB): Promise<boolean> {
+  if (process.env.ANTHROPIC_API_KEY) return true;
+  return hasOwnAnthropicKey(supabase);
 }

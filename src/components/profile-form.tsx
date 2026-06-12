@@ -1,8 +1,9 @@
 'use client';
 
-import { useActionState, useEffect } from 'react';
+import { useActionState, useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { saveProfile, type ProfileActionState } from '@/lib/actions/profile';
+import { prefillFromCv } from '@/lib/actions/scoring';
 import { SENIORITY_LEVELS, WORK_MODES } from '@/lib/constants';
 import { serializeLinks, serializeList } from '@/lib/profile';
 import type { ProfileRow } from '@/types/database';
@@ -12,21 +13,64 @@ function Field({ children }: { children: React.ReactNode }) {
   return <div>{children}</div>;
 }
 
-export function ProfileForm({ profile }: { profile: ProfileRow | null }) {
+export function ProfileForm({
+  profile,
+  aiEnabled = false,
+}: {
+  profile: ProfileRow | null;
+  aiEnabled?: boolean;
+}) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState<ProfileActionState, FormData>(
     saveProfile,
     null,
   );
 
+  // Controlled so "Prefill from CV" can populate them for the user to confirm.
+  const [summary, setSummary] = useState(profile?.summary ?? '');
+  const [seniority, setSeniority] = useState<string>(profile?.seniority ?? '');
+  const [skills, setSkills] = useState(serializeList(profile?.skills));
+  const [targetRoles, setTargetRoles] = useState(serializeList(profile?.target_roles));
+
+  const [prefilling, startPrefill] = useTransition();
+  const [prefillMsg, setPrefillMsg] = useState<string | null>(null);
+
   useEffect(() => {
     if (state?.ok) router.refresh();
   }, [state, router]);
+
+  function onPrefill() {
+    setPrefillMsg(null);
+    startPrefill(async () => {
+      const res = await prefillFromCv();
+      if (!res.ok || !res.data) {
+        setPrefillMsg(res.error ?? 'Prefill failed.');
+        return;
+      }
+      const d = res.data;
+      if (d.skills.length) setSkills(serializeList(d.skills));
+      if (d.target_roles.length) setTargetRoles(serializeList(d.target_roles));
+      if (d.summary) setSummary(d.summary);
+      if (d.seniority) setSeniority(d.seniority);
+      setPrefillMsg('Prefilled from CV — review the highlighted fields, then Save.');
+    });
+  }
 
   const modes = new Set(profile?.work_modes ?? []);
 
   return (
     <form action={formAction} className="space-y-5">
+      {aiEnabled ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-[10px] border border-border bg-surface p-3">
+          <Button type="button" variant="secondary" disabled={prefilling} onClick={onPrefill}>
+            {prefilling ? 'Reading CV…' : '✦ Prefill from CV'}
+          </Button>
+          <span className="text-xs text-muted">
+            {prefillMsg ?? 'Extract skills, seniority, summary, and target roles from your CV (runs on your API key). Review before saving.'}
+          </span>
+        </div>
+      ) : null}
+
       {/* Identity ------------------------------------------------------------ */}
       <fieldset className="space-y-3">
         <legend className="text-xs font-semibold uppercase tracking-wide text-faint">
@@ -57,7 +101,12 @@ export function ProfileForm({ profile }: { profile: ProfileRow | null }) {
           </Field>
           <Field>
             <Label htmlFor="seniority">Seniority</Label>
-            <Select id="seniority" name="seniority" defaultValue={profile?.seniority ?? ''}>
+            <Select
+              id="seniority"
+              name="seniority"
+              value={seniority}
+              onChange={(e) => setSeniority(e.target.value)}
+            >
               <option value="">—</option>
               {SENIORITY_LEVELS.map((s) => (
                 <option key={s} value={s}>
@@ -73,7 +122,8 @@ export function ProfileForm({ profile }: { profile: ProfileRow | null }) {
             id="summary"
             name="summary"
             placeholder="A short professional summary."
-            defaultValue={profile?.summary ?? ''}
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
           />
         </Field>
       </fieldset>
@@ -90,7 +140,8 @@ export function ProfileForm({ profile }: { profile: ProfileRow | null }) {
               id="skills"
               name="skills"
               placeholder="React, TypeScript, Node…"
-              defaultValue={serializeList(profile?.skills)}
+              value={skills}
+              onChange={(e) => setSkills(e.target.value)}
             />
             <p className="mt-1 text-xs text-faint">Comma- or newline-separated.</p>
           </Field>
@@ -110,7 +161,8 @@ export function ProfileForm({ profile }: { profile: ProfileRow | null }) {
               id="target_roles"
               name="target_roles"
               placeholder="Frontend Engineer, Fullstack"
-              defaultValue={serializeList(profile?.target_roles)}
+              value={targetRoles}
+              onChange={(e) => setTargetRoles(e.target.value)}
             />
           </Field>
           <Field>

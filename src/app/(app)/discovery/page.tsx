@@ -1,13 +1,17 @@
 import { createClient } from '@/lib/supabase/server';
-import type { JobRow, JobState, SavedFilterRow } from '@/types/database';
+import type { JobRow, JobState, ProfileRow, SavedFilterRow } from '@/types/database';
 import { criteriaFromParams, jobRowToNormalized } from '@/lib/discovery/filter-params';
 import { matchesFilter } from '@/lib/discovery/filters';
 import { isCriteriaEmpty } from '@/lib/discovery/filter-params';
+import { hasAnthropicKey } from '@/lib/ai/resolve-key';
+import { scoredProfileHash } from '@/lib/ai/hash';
+import { profileToScoring } from '@/lib/ai/score';
 import { JobCard } from '@/components/job-card';
 import { DiscoveryTabs } from '@/components/discovery-tabs';
 import { FilterPanel } from '@/components/filter-panel';
 import { PresetBar } from '@/components/preset-bar';
 import { RefreshInboxButton, ImportPasteButton } from '@/components/discovery-actions';
+import { ScoreNewButton } from '@/components/score-new-button';
 import { EmptyState } from '@/components/ui';
 
 const STATES: JobState[] = ['new', 'saved', 'dismissed', 'promoted'];
@@ -29,7 +33,13 @@ export default async function DiscoveryPage({
 
   const supabase = await createClient();
 
-  const [{ data: stateRows }, { data: jobRows }, { data: presetRows }] = await Promise.all([
+  const [
+    { data: stateRows },
+    { data: jobRows },
+    { data: presetRows },
+    { data: profileRow },
+    aiEnabled,
+  ] = await Promise.all([
     supabase.from('jobs').select('state'),
     supabase
       .from('jobs')
@@ -38,6 +48,8 @@ export default async function DiscoveryPage({
       .order('posted_at', { ascending: false, nullsFirst: false })
       .order('ingested_at', { ascending: false }),
     supabase.from('saved_filters').select('*').order('created_at', { ascending: true }),
+    supabase.from('profiles').select('*').maybeSingle(),
+    hasAnthropicKey(supabase),
   ]);
 
   const counts = (stateRows ?? []).reduce<Record<string, number>>((acc, r) => {
@@ -45,11 +57,21 @@ export default async function DiscoveryPage({
     return acc;
   }, {});
 
+  const profile = (profileRow ?? null) as ProfileRow | null;
+  const currentProfileHash = profile ? scoredProfileHash(profileToScoring(profile)) : null;
+
   const allJobs = (jobRows ?? []) as JobRow[];
   const hasFilters = !isCriteriaEmpty(criteria);
-  const jobs = hasFilters
+  const filtered = hasFilters
     ? allJobs.filter((j) => matchesFilter(jobRowToNormalized(j), criteria))
     : allJobs;
+
+  // When scores exist, sort the New inbox best-fit first (stable; unscored last).
+  const hasScores = filtered.some((j) => j.fit_score != null);
+  const jobs =
+    active === 'new' && hasScores
+      ? [...filtered].sort((a, b) => (b.fit_score ?? -1) - (a.fit_score ?? -1))
+      : filtered;
 
   const presets = ((presetRows ?? []) as SavedFilterRow[]).map((p) => ({
     id: p.id,
@@ -65,10 +87,18 @@ export default async function DiscoveryPage({
           <p className="text-sm text-muted">Review, save, dismiss, or promote ingested jobs.</p>
         </div>
         <div className="flex items-center gap-2">
+          {aiEnabled ? <ScoreNewButton /> : null}
           <ImportPasteButton />
           <RefreshInboxButton />
         </div>
       </header>
+
+      {aiEnabled ? (
+        <p className="text-xs text-faint">
+          Fit scores run on your own Anthropic API key (set it in{' '}
+          <span className="text-muted">Profile → AI</span>).
+        </p>
+      ) : null}
 
       <DiscoveryTabs active={active} counts={counts} />
 
@@ -100,7 +130,12 @@ export default async function DiscoveryPage({
           </p>
           <div className="grid gap-3">
             {jobs.map((job) => (
-              <JobCard key={job.id} job={job} />
+              <JobCard
+                key={job.id}
+                job={job}
+                aiEnabled={aiEnabled}
+                currentProfileHash={currentProfileHash}
+              />
             ))}
           </div>
         </>

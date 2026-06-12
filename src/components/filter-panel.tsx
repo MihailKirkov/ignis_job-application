@@ -10,6 +10,7 @@ const MODES = ['On-site', 'Hybrid', 'Remote'] as const;
 const SENIORITIES = ['intern', 'junior', 'medior', 'senior', 'lead', 'principal'] as const;
 const FILTER_KEYS = [
   'inc', 'incMatch', 'exc', 'loc', 'locText', 'salaryMin', 'sen', 'mode', 'days', 'src', 'lang',
+  'minFit',
 ];
 
 function CheckChip({
@@ -231,16 +232,29 @@ export function FilterPanel() {
           </div>
 
           <div className="flex items-center justify-between gap-2">
-            <Select
-              aria-label="Language"
-              className="h-9 w-auto"
-              value={draft.lang ?? ''}
-              onChange={(e) => setKey('lang', e.target.value)}
-            >
-              <option value="">Any language</option>
-              <option value="en">English</option>
-              <option value="nl">Dutch</option>
-            </Select>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select
+                aria-label="Language"
+                className="h-9 w-auto"
+                value={draft.lang ?? ''}
+                onChange={(e) => setKey('lang', e.target.value)}
+              >
+                <option value="">Any language</option>
+                <option value="en">English</option>
+                <option value="nl">Dutch</option>
+              </Select>
+              <Select
+                aria-label="Minimum fit score"
+                className="h-9 w-auto"
+                value={draft.minFit ?? ''}
+                onChange={(e) => setKey('minFit', e.target.value)}
+              >
+                <option value="">Any fit</option>
+                <option value="50">Fit ≥ 50</option>
+                <option value="70">Fit ≥ 70</option>
+                <option value="80">Fit ≥ 80</option>
+              </Select>
+            </div>
             <div className="flex gap-2">
               <Button variant="ghost" onClick={clear}>
                 Clear
