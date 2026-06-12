@@ -28,6 +28,9 @@ export type Channel =
 
 export type JobState = 'new' | 'saved' | 'dismissed' | 'promoted';
 
+// AI fit-score verdict (also drives the discovery badge colour).
+export type ScoreVerdict = 'strong' | 'medium' | 'weak';
+
 export type Seniority =
   | 'intern'
   | 'junior'
@@ -67,6 +70,13 @@ export type JobRow = {
   raw: Record<string, unknown>;
   fuzzy_key: string | null;
   state: JobState;
+  // AI fit score against the user's profile (null until scored).
+  fit_score: number | null;
+  fit_verdict: ScoreVerdict | null;
+  fit_summary: string | null;
+  fit_breakdown: Record<string, unknown>; // { matched_skills: string[], gaps: string[] }
+  scored_at: string | null;
+  scored_profile_hash: string | null;
   ingested_at: string;
   created_at: string;
   updated_at: string;
@@ -134,6 +144,14 @@ export type ProfileRow = {
   updated_at: string;
 };
 
+// user_secrets is one row per user; anthropic_api_key is stored ENCRYPTED.
+export type UserSecretRow = {
+  user_id: string;
+  anthropic_api_key: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 type Mutable<T> = Omit<T, 'id' | 'user_id' | 'created_at' | 'updated_at'>;
 
 // All writable columns are optional and may be null (DB constraints are the real
@@ -155,6 +173,7 @@ export type Database = {
       sources: TableShape<SourceRow>;
       saved_filters: TableShape<SavedFilterRow>;
       profiles: TableShape<ProfileRow>;
+      user_secrets: TableShape<UserSecretRow>;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

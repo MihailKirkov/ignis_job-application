@@ -2,6 +2,7 @@ import type {
   ApplicationStatus,
   Channel,
   JobState,
+  ScoreVerdict,
   Seniority,
   SourceType,
   WorkMode,
@@ -44,6 +45,15 @@ export const CHANNELS: Channel[] = [
 ];
 
 export const JOB_STATES: JobState[] = ['new', 'saved', 'dismissed', 'promoted'];
+
+// AI fit verdicts (best -> worst) and their badge colour tokens.
+export const FIT_VERDICTS: ScoreVerdict[] = ['strong', 'medium', 'weak'];
+
+export const FIT_VERDICT_COLOR: Record<ScoreVerdict, string> = {
+  strong: 'status-offer', // green
+  medium: 'status-interview', // amber
+  weak: 'status-rejected', // red
+};
 
 export const SOURCE_TYPES: SourceType[] = [
   'adzuna',
