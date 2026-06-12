@@ -28,6 +28,17 @@ export type Channel =
 
 export type JobState = 'new' | 'saved' | 'dismissed' | 'promoted';
 
+export type Seniority =
+  | 'intern'
+  | 'junior'
+  | 'medior'
+  | 'senior'
+  | 'lead'
+  | 'principal';
+
+// A single profile link, stored in the profiles.links jsonb array.
+export type ProfileLink = { label: string; url: string };
+
 export type SourceType =
   | 'adzuna'
   | 'arbeitnow'
@@ -102,6 +113,27 @@ export type SavedFilterRow = {
   updated_at: string;
 };
 
+// profiles is one row per user, keyed directly by user_id (no separate id).
+export type ProfileRow = {
+  user_id: string;
+  full_name: string | null;
+  headline: string | null;
+  location: string | null;
+  summary: string | null;
+  seniority: Seniority | null;
+  skills: string[];
+  target_roles: string[];
+  target_locations: string[];
+  target_salary_min: number | null;
+  work_modes: WorkMode[];
+  languages: string[];
+  links: ProfileLink[];
+  cv_text: string | null;
+  cv_file_path: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 type Mutable<T> = Omit<T, 'id' | 'user_id' | 'created_at' | 'updated_at'>;
 
 // All writable columns are optional and may be null (DB constraints are the real
@@ -122,6 +154,7 @@ export type Database = {
       applications: TableShape<ApplicationRow>;
       sources: TableShape<SourceRow>;
       saved_filters: TableShape<SavedFilterRow>;
+      profiles: TableShape<ProfileRow>;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

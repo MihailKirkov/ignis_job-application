@@ -2,6 +2,7 @@ import type {
   ApplicationStatus,
   Channel,
   JobState,
+  Seniority,
   SourceType,
   WorkMode,
 } from '@/types/database';
@@ -21,6 +22,16 @@ export const APPLICATION_STATUSES: ApplicationStatus[] = [
 export const TERMINAL_STATUSES: ApplicationStatus[] = ['Rejected', 'Closed'];
 
 export const WORK_MODES: WorkMode[] = ['On-site', 'Hybrid', 'Remote'];
+
+// Seniority ladder for the profile (low -> high). `null` means unspecified.
+export const SENIORITY_LEVELS: Seniority[] = [
+  'intern',
+  'junior',
+  'medior',
+  'senior',
+  'lead',
+  'principal',
+];
 
 export const CHANNELS: Channel[] = [
   'Detachering',
