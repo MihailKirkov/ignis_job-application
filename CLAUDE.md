@@ -26,24 +26,38 @@ owner for now) — every row is scoped by `user_id` and enforced with RLS.
 ```
 supabase/migrations/0001_init.sql   # full schema + RLS + updated_at triggers
 supabase/migrations/0002_profiles.sql # profiles table + RLS + private 'cvs' storage bucket
+supabase/migrations/0003_ai_scoring.sql # jobs fit_* columns + user_secrets (encrypted API key)
 src/types/database.ts               # hand-written DB types (type aliases, not interfaces)
 src/lib/supabase/                   # the three clients + auth helpers
-src/lib/constants.ts                # enums (statuses, channels, modes, seniority, source meta)
+src/lib/constants.ts                # enums (statuses, channels, modes, seniority, fit verdicts, source meta)
 src/lib/utils.ts                    # dates, salary/status formatting, cn()
 src/lib/profile.ts                  # pure profile/CV helpers (sanitize, parse, validate; unit-tested)
-src/lib/actions/                    # 'use server' mutations (applications, profile, …)
+src/lib/ai/                         # AI fit-scoring + CV prefill (pure prompt/parse/hash + server-only client)
+src/lib/actions/                    # 'use server' mutations (applications, profile, scoring, ai-key, …)
 src/lib/sources/                    # NormalizedJob shape + per-source fetchers
 src/lib/discovery/                  # normalize, dedupe, filters (pure + unit-tested)
 src/app/(app)/                      # protected surfaces: needs-action, tracker, discovery, sources, profile
 src/app/auth/                       # callback / confirm / signout routes
 src/app/api/                        # import + cron + export route handlers
-tests/                              # vitest: normalize, dedupe, filters, profile (+ sources)
+tests/                              # vitest: normalize, dedupe, filters, profile, ai-* (+ sources)
 ```
 
 Profile + CV: `profiles` is one row per user (PK `user_id`). CV text lands in
 `cv_text` two ways — pasted, or extracted from a PDF uploaded to the private
 `cvs` Storage bucket (RLS per-user folder) using `unpdf` (serverless PDF.js, no
 native binaries). Both paths go through Server Actions in `actions/profile.ts`.
+
+AI (fit-scoring + CV prefill): uses the **Anthropic API** via the official
+`@anthropic-ai/sdk`, **server-only**, on **Claude Haiku 4.5** (`claude-haiku-4-5`
+— fast/cheap, no `effort` param). `src/lib/ai` splits into a **pure core**
+(`prompt.ts`, `parse.ts` (zod), `hash.ts`, `score.ts` — unit-tested via an
+injected `ModelCall` seam, like `fetchImpl`) and **server-only** glue (`client.ts`
+SDK wrapper, `crypto.ts` aes-256-gcm, `resolve-key.ts`). Each user stores their
+**own** Anthropic key (encrypted in `user_secrets` with `APP_ENCRYPTION_KEY`);
+`ANTHROPIC_API_KEY` is the owner/demo fallback. No key → scoring is disabled with
+a message, never a crash. `jobs.scored_profile_hash` makes scores re-stale when
+the profile changes. **Keep `src/lib/ai` server-only modules out of the test
+import graph** — `server-only` throws under vitest.
 
 ## Working rules (for future changes)
 

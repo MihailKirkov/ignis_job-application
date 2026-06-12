@@ -104,6 +104,11 @@ aggregate:
 - `profile.ts` — `saveProfile` (upsert the 1:1 profile + pasted CV text),
   `uploadCv` (store the PDF in the private `cvs` bucket + extract its text with
   `unpdf`), `removeCvFile`. Pure parsing/validation lives in `src/lib/profile.ts`.
+- `scoring.ts` — `scoreJob`, `scoreNewJobs` (batch over unscored/stale New jobs,
+  bounded concurrency + hard cap), `prefillFromCv`. Resolves the user's key and
+  calls `src/lib/ai`; degrades with a message (never crashes) when no key exists.
+- `ai-key.ts` — `setApiKey` (encrypts + upserts into `user_secrets`), `clearApiKey`.
+  The plaintext key is never returned, logged, or sent to the client.
 - `jobs.ts` — `setJobState`, `promoteJob` (creates the linked application), and
   `runUserIngestion` (the manual "Refresh inbox", RLS-scoped to the user).
 - `sources.ts` — create/toggle/delete sources (parses the config JSON).
@@ -111,6 +116,28 @@ aggregate:
 
 Each action calls `requireUser()`, mutates via the RLS-scoped server client, then
 `revalidatePath()` so the affected Server Components re-render with fresh data.
+
+### `src/lib/ai/` — AI fit-scoring + CV prefill
+
+LLM features via the official `@anthropic-ai/sdk` on **Claude Haiku 4.5**
+(`claude-haiku-4-5` — fast/cheap; no `effort` param). Split like the source layer:
+a **pure, unit-tested core** and **server-only** glue, with the model call injected
+exactly like source fetchers inject `fetchImpl`.
+
+| File            | Side | Responsibility                                                                 |
+| --------------- | ---- | ------------------------------------------------------------------------------ |
+| `types.ts`      | pure | `ModelRequest`/`ModelCall` (the injectable seam), `ScoringProfile`/`ScoringJob`, `ScoreResult`, `CvPrefill`. |
+| `prompt.ts`     | pure | `buildScorePrompt` / `buildPrefillPrompt` — deterministic payloads asking for strict JSON; `AI_MODEL`. |
+| `parse.ts`      | pure | `parseScoreResponse` / `parsePrefillResponse` — zod-validate + coerce, throw on malformed. |
+| `hash.ts`       | pure | `scoredProfileHash` — stable, order/case-insensitive hash of scoring-relevant profile fields. |
+| `score.ts`      | pure | `runScore` / `runPrefill` orchestrators (build → injected `call` → parse) + DB-row adapters. |
+| `client.ts`     | **server-only** | `anthropicCall(key)` — wraps the SDK into a `ModelCall`. |
+| `crypto.ts`     | **server-only** | aes-256-gcm `encryptSecret`/`decryptSecret` (key from `APP_ENCRYPTION_KEY`). |
+| `resolve-key.ts`| **server-only** | resolve the user's key (decrypt) → env fallback → null; `has*AnthropicKey` checks. |
+
+**Design rule:** the `server-only` modules (`client`, `crypto`, `resolve-key`)
+**must stay out of the test import graph** — `server-only` throws under vitest.
+The pure modules carry the logic and the tests; the actions wire in the SDK.
 
 ### `src/lib/` root
 
@@ -190,8 +217,10 @@ Split by who renders them:
   (delete/clear), `tracker-toolbar.tsx` (search/status), `job-state-controls.tsx`
   (save/dismiss/promote), `filter-panel.tsx`, `preset-bar.tsx`,
   `discovery-actions.tsx` (refresh + paste-import), `add-source-form.tsx`,
-  `source-controls.tsx`, `profile-form.tsx` (the profile editor),
-  `cv-panel.tsx` (CV upload/replace), `app-shell.tsx` (nav).
+  `source-controls.tsx`, `profile-form.tsx` (the profile editor + "Prefill from CV"),
+  `cv-panel.tsx` (CV upload/replace), `ai-key-panel.tsx` (set/clear the API key),
+  `job-score.tsx` (per-card Score/Rescore), `score-new-button.tsx` (batch score),
+  `app-shell.tsx` (nav).
 
 Pattern: a server component (e.g. `application-card.tsx`) renders display markup and
 drops in small client buttons (`EditApplicationButton`, `DeleteApplicationButton`)
@@ -243,7 +272,8 @@ job appears under Discovery → New.
 
 ## Testing & the green gate
 
-Pure logic in `src/lib/discovery`, `src/lib/sources`, and `src/lib/profile` is
+Pure logic in `src/lib/discovery`, `src/lib/sources`, `src/lib/profile`, and the
+pure half of `src/lib/ai` (prompt/parse/hash/score, via a canned `ModelCall`) is
 unit-tested in `tests/` (see [`testing.md`](./testing.md)). Components, actions,
 and RLS are covered by the manual walkthrough plus `typecheck` + `build`. Before
 "done":

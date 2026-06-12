@@ -1,9 +1,10 @@
 # Database
 
-Postgres on Supabase. Five application tables, all owned by a Supabase Auth user
+Postgres on Supabase. Six application tables, all owned by a Supabase Auth user
 and protected by Row-Level Security. The source of truth is the migrations under
 `supabase/migrations/` (`0001_init.sql` for the original four tables,
-`0002_profiles.sql` for `profiles` + the private CV storage bucket); the
+`0002_profiles.sql` for `profiles` + the private CV storage bucket,
+`0003_ai_scoring.sql` for the `jobs.fit_*` columns + `user_secrets`); the
 TypeScript mirror is `src/types/database.ts`. This doc explains the shape and the
 *why*.
 
@@ -14,6 +15,7 @@ TypeScript mirror is `src/types/database.ts`. This doc explains the shape and th
 ```mermaid
 erDiagram
     USERS ||--o| PROFILES      : has
+    USERS ||--o| USER_SECRETS  : has
     USERS ||--o{ APPLICATIONS  : owns
     USERS ||--o{ JOBS          : owns
     USERS ||--o{ SOURCES       : owns
@@ -43,6 +45,12 @@ erDiagram
         jsonb   raw "untouched source payload"
         text    fuzzy_key "normalized company+title+location"
         text    state "new | saved | dismissed | promoted"
+        numeric fit_score "AI fit 0-100 (null until scored)"
+        text    fit_verdict "strong | medium | weak | null"
+        text    fit_summary
+        jsonb   fit_breakdown "{ matched_skills, gaps }"
+        timestamptz scored_at
+        text    scored_profile_hash "hash of scoring-relevant profile fields"
         timestamptz ingested_at
         timestamptz created_at
         timestamptz updated_at
@@ -108,6 +116,13 @@ erDiagram
         timestamptz created_at
         timestamptz updated_at
     }
+
+    USER_SECRETS {
+        uuid    user_id PK "-> auth.users.id, on delete cascade (one row per user)"
+        text    anthropic_api_key "aes-256-gcm ciphertext (never selected client-side)"
+        timestamptz created_at
+        timestamptz updated_at
+    }
 ```
 
 > `USERS` is Supabase's built-in `auth.users` table — we don't define it, we only
@@ -118,10 +133,10 @@ erDiagram
 
 ## Relationships & lifecycle
 
-- **Ownership (5×):** `applications`, `jobs`, `sources`, `saved_filters`, and
-  `profiles` each belong to a user via `user_id`. This is what RLS keys on.
-  `profiles` is the one **1:1** table — `user_id` is its primary key, so there is
-  at most one profile row per user.
+- **Ownership (6×):** `applications`, `jobs`, `sources`, `saved_filters`,
+  `profiles`, and `user_secrets` each belong to a user via `user_id`. This is what
+  RLS keys on. `profiles` and `user_secrets` are the **1:1** tables — `user_id` is
+  their primary key, so there is at most one row per user.
 - **Promotion (`jobs` → `applications`):** `applications.job_id` is a **nullable**
   FK to `jobs.id`. When you *Promote* a discovered job, a new application row is
   created with `job_id` set and the job's `state` flipped to `promoted`. Manually
@@ -196,11 +211,31 @@ private `cvs` Storage bucket. The pure parsing/validation/clamping for all of
 this lives in `src/lib/profile.ts`; writes go through `actions/profile.ts`. Added
 in migration `0002_profiles.sql`.
 
+### `jobs` AI fit columns (added in `0003_ai_scoring.sql`)
+
+`fit_score` (0–100, check-constrained), `fit_verdict` (`strong | medium | weak`),
+`fit_summary`, and `fit_breakdown` (`{ matched_skills, gaps }`) hold the AI
+fit-scoring result; `scored_at` stamps it. `scored_profile_hash` is a stable hash
+of the **scoring-relevant profile fields** at scoring time — when the profile
+changes, the hash changes, which marks existing scores stale so they re-score
+(the batch "Score new jobs" skips jobs whose stored hash already matches). Index
+`(user_id, fit_score desc nulls last)` backs the best-fit-first sort. Scoring goes
+through `actions/scoring.ts` using `src/lib/ai` (Claude Haiku 4.5).
+
+### `user_secrets` — the encrypted per-user Anthropic key (1:1)
+
+One row per user, keyed by `user_id`. `anthropic_api_key` holds the user's
+Anthropic key **encrypted at rest** (aes-256-gcm via `APP_ENCRYPTION_KEY`). The
+ciphertext is **never selected into client-facing reads** — pages only check for
+existence (`select('user_id')`); the key is decrypted server-side at call time in
+`src/lib/ai/resolve-key.ts`, which falls back to the `ANTHROPIC_API_KEY` env key
+when a user has none.
+
 ---
 
 ## Row-Level Security
 
-RLS is **enabled on all five tables**, and each has four owner-only policies
+RLS is **enabled on all six tables**, and each has four owner-only policies
 (select / insert / update / delete) of the form:
 
 ```sql
