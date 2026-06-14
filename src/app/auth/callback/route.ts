@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-// Handles the PKCE `code` returned by Google OAuth and by the default magic-link
-// email template. Exchanges it for a session, then redirects onward.
+// Handles the PKCE `code` flow: Google OAuth always, plus magic links when the
+// same-browser default Supabase template is used instead of the cross-device
+// token_hash one. Exchanges the code for a session, then redirects onward.
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');

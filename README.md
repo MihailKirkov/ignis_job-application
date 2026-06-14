@@ -90,18 +90,19 @@ docs/                               setup · testing · database · code-structu
 5. **API keys** (Project Settings → API): copy the **Project URL**, the
    **publishable/anon** key, and the **service-role** key (server-only).
 
-### Optional: token_hash magic-link flow
+### Recommended: cross-device magic links (token_hash)
 
-By default magic links use the PKCE `code` flow through `/auth/callback` — no
-template changes needed (open the link in the same browser). If you want the
-token_hash flow (works across browsers/devices), change **Auth → Email Templates
-→ Magic Link** to:
+The default the app is built around. Set **Auth → Email Templates → Magic Link**
+to:
 
 ```
 {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=magiclink&next=/needs-action
 ```
 
-The `/auth/confirm` route is already implemented.
+The `/auth/confirm` route is already implemented — links then work across
+browsers/devices. Leaving the template on Supabase's default `{{ .ConfirmationURL }}`
+also works, via the PKCE `code` flow through `/auth/callback`, but those links
+must be opened in the same browser. Google OAuth always uses the `code` flow.
 
 ---
 

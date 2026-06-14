@@ -73,7 +73,7 @@ function LoginForm() {
             {status === 'sent' ? (
               <div className="rounded-md border border-success/40 bg-success/10 px-3 py-3 text-sm text-fg">
                 Check <span className="font-mono">{email}</span> for a magic link.
-                Open it in this browser to finish signing in.
+                Open it on any device to finish signing in.
               </div>
             ) : (
               <form onSubmit={sendMagicLink} className="space-y-3">

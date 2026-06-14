@@ -73,17 +73,23 @@ supabase db push                                  # applies supabase/migrations/
      - `http://localhost:3000/auth/callback`
      - `https://<your-app>.vercel.app/auth/callback` (after you know your domain)
 
-### Optional: cross-device magic links (token_hash)
+### Recommended: cross-device magic links (token_hash)
 
-By default magic links use the PKCE `code` flow and must be opened **in the same
-browser** that requested them. If you want links that work across browsers/devices,
-go to **Authentication → Email Templates → Magic Link** and set the link to:
+This is the **default** the app is built around. Go to **Authentication → Email
+Templates → Magic Link** and set the link to:
 
 ```
 {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=magiclink&next=/needs-action
 ```
 
-The `/auth/confirm` route is already implemented — no code change needed.
+The `/auth/confirm` route is already implemented — no code change needed. With
+this template the magic link works **across browsers and devices** (request it on
+your laptop, open it on your phone), which is what most people expect.
+
+> Prefer not to touch the template? Leave it on Supabase's default
+> `{{ .ConfirmationURL }}`. The app still works via the PKCE `code` flow through
+> `/auth/callback` — but those links must be opened **in the same browser** that
+> requested them. Google OAuth always uses this `code` flow.
 
 ---
 
@@ -127,8 +133,7 @@ in the per-source result).
 
 ## 6. The CRON_SECRET
 
-This guards the scheduled ingestion route so only Vercel Cron (or you) can trigger
-it. Generate any long random string:
+This guards the scheduled ingestion route so only Vercel Cron (or you) can trigger it. Generate any long random string:
 
 ```bash
 node -e "console.log(crypto.randomUUID())"
@@ -169,9 +174,10 @@ the build, so if you change them you must restart `npm run dev` (or rebuild).
 npm run dev          # http://localhost:3000
 ```
 
-Open http://localhost:3000 — you'll be redirected to `/login`. Enter your email,
-click the magic link in the email (open it in the same browser), and you land on
-the **Needs action** page. First-time flow:
+Open http://localhost:3000 — the public landing page. Hit **Sign in**, enter your
+email, and click the magic link in the email. With the recommended token_hash
+template (step 3) it opens on any device; you land on the **Needs action** page,
+where a first-run checklist walks you through setup. First-time flow:
 
 1. Go to **Sources** → **Add source** → pick **Adzuna**, adjust the example config
    (e.g. `query`, `where: "Eindhoven"`), **Add source**.
@@ -220,8 +226,9 @@ For a full functional walkthrough, see [`testing.md`](./testing.md).
 - **"Your project's URL and Key are required to create a Supabase client!"** — the
   `NEXT_PUBLIC_SUPABASE_*` vars weren't present at build time. Stop the dev server,
   confirm they're in `.env.local`, and restart `npm run dev`.
-- **Magic link says "invalid"** — open the link in the **same browser** you
-  requested it from (PKCE), or switch to the token_hash template (step 3).
+- **Magic link says "invalid"** — if you're on the default Supabase template
+  (PKCE), open the link in the **same browser** you requested it from; or switch
+  to the recommended cross-device token_hash template (step 3).
 - **Redirected to `/login` in a loop after clicking the link** — your
   `/auth/callback` URL isn't in the Supabase **Redirect URLs** list (step 3).
 - **Adzuna source shows an error in the refresh summary** — missing/!invalid
