@@ -1,61 +1,114 @@
 # Job Command Center
 
-A personal **job-discovery inbox + application tracker**. A dark, dense
-"command-center" tool (not a marketing page) for finding roles and running your
-pipeline. Built multi-user from day one — single owner for now, but every row is
-scoped by `user_id` and protected with Row-Level Security.
+> Ingest jobs, score the fit with AI, and run your whole application pipeline in
+> one dark, dense inbox.
 
-- **Discovery inbox** — jobs ingested from legitimate sources, filtered and
-  reviewed; save / dismiss / promote.
-- **Applications tracker** — your real pipeline, with a "Needs action" queue as
-  the hero.
+A personal **job-discovery inbox + application tracker** — a "command-center"
+tool (not a marketing page) for finding roles and running your pipeline. It pulls
+roles from legitimate APIs and public ATS boards, ranks each one against your
+profile and CV with Claude, and tracks every application from *to apply* to
+*offer*. Built multi-user from day one: every row is scoped by `user_id` and
+enforced with Postgres Row-Level Security.
 
-**Stack:** Next.js 16 (App Router, TypeScript strict, Turbopack) · Tailwind v4 ·
-Supabase (Postgres + Auth + RLS) · `@supabase/ssr` · Vercel (+ Cron). Free tiers
-only.
+**Stack:** Next.js 16 (App Router, TypeScript strict, Turbopack) · React 19 ·
+Tailwind v4 · Supabase (Postgres + Auth + RLS) · `@supabase/ssr` ·
+Anthropic Claude (Haiku 4.5) · Vercel (+ Cron) · Vitest. Free tiers only.
+
+**▶ Live demo** — `/demo` is a no-auth, read-only tour with sample data (set
+`NEXT_PUBLIC_SITE_URL` and link your Vercel domain here). The public landing page
+lives at `/`.
+
+## Screenshots & demo
+
+The fastest way to see it is the **read-only `/demo`** (Discovery, Tracker, and
+the Needs-action queue, populated and AI-scored — no sign-up). ASCII layouts of
+every screen live in [`docs/wireframes.md`](docs/wireframes.md).
+
+<details>
+<summary>Embed PNGs</summary>
+
+Capture the three views from `/demo` and drop them in `docs/screenshots/`, then:
+
+```md
+![Discovery — fit-scored inbox](docs/screenshots/discovery.png)
+![Tracker — pipeline](docs/screenshots/tracker.png)
+![Needs action — the hero queue](docs/screenshots/needs-action.png)
+```
+
+</details>
+
+## Architecture
+
+Next.js 16 App Router on Vercel, Supabase for Postgres + Auth + RLS. The root
+`proxy.ts` (Next 16's renamed middleware) refreshes the `@supabase/ssr` session
+and gates protected routes; the public landing, `/demo`, `/login`, and `/legal`
+stay open. Each **source fetcher** (`src/lib/sources/`) reduces a provider's
+payload to one `NormalizedJob` shape behind an injectable `fetchImpl`, so the
+**pure discovery core** — normalize, dedupe, filter (`src/lib/discovery/`) — is
+unit-tested with no network. Ingestion (manual button or `CRON_SECRET`-guarded
+Vercel Cron) dedupes by `(source, external_id)` plus a fuzzy
+company+title+location key. **AI fit-scoring** (`src/lib/ai/`) splits a pure,
+tested core (prompt builder, zod parser, profile hash) from server-only glue
+(the Claude SDK client, AES-256-GCM key encryption); each user brings their own
+encrypted Anthropic key. Writes are Server Actions; everything renders in dark
+command-center tokens defined in Tailwind v4's `@theme`.
 
 ---
 
 ## Features
 
-- Magic-link auth (Google OAuth optional) via `@supabase/ssr`; session refresh +
-  route protection in Next 16's root `proxy.ts`.
-- Applications CRUD scoped per user: company, role, location, mode, channel,
-  status pipeline, salary, link, contact, dates, next-action, notes, optional
-  link back to a discovered job.
-- **Needs-action queue:** items due/overdue (and not Rejected/Closed), overdue
-  flagged, one-click clear. Pipeline stat counts, status + search filters, sort
-  (next-action asc → date-applied desc), JSON export.
+- **Public landing + read-only demo** — a real landing page at `/`, and a
+  no-auth `/demo` that renders the actual Discovery / Tracker / Needs-action
+  components against bundled sample data (no DB, no real user data).
+- **AI fit-scoring (Claude)** — score any job against your profile + CV for a
+  0–100 fit, a verdict (strong / medium / weak), a one-line summary, and matched
+  skills vs. gaps. Best-fit floats to the top; scores re-stale when your profile
+  changes. Each user supplies their **own** Anthropic key (encrypted at rest).
+- **Profile & CV** — one profile per user; CV text pasted or extracted from an
+  uploaded PDF (`unpdf`, no native binaries) in a private per-user Storage
+  bucket. Powers both filtering and AI scoring.
 - **Discovery ingestion** from Adzuna (official), Arbeitnow, Remotive, RemoteOK,
   and public ATS company boards (Greenhouse, Lever, Ashby, Workable, Recruitee,
   SmartRecruiters). Everything normalized into one shape; raw payload kept as
   `jsonb`; deduped by `(source, external_id)` and a fuzzy
   company+title+location key.
+- **Needs-action queue:** items due/overdue (and not Rejected/Closed), overdue
+  flagged, one-click clear — plus a **first-run onboarding checklist** that
+  guides a new account from empty to a scored inbox.
+- Applications CRUD scoped per user: company, role, location, mode, channel,
+  status pipeline, salary, link, contact, dates, next-action, notes, optional
+  link back to a discovered job. Pipeline stat counts, status + search filters,
+  JSON export.
 - Per-job state (new / saved / dismissed / promoted). **Promote** creates a
   pre-filled application linked back via `job_id`.
 - **Saveable filter presets:** keyword include/exclude, location scope
   (Eindhoven+radius / NL / remote), min salary, seniority guess, work mode,
-  posted-within-N-days, source, language.
-- **Scheduled ingestion** via Vercel Cron (idempotent, `CRON_SECRET`-guarded).
-- **Manual/Cowork import:** `POST /api/import` accepts an array of normalized
-  jobs (session-protected, RLS-scoped); paste-import box in the UI.
+  posted-within-N-days, source, language, min fit score.
+- **Auth:** cross-device token_hash magic links by default (Google OAuth
+  optional) via `@supabase/ssr`; session refresh + route protection in the root
+  `proxy.ts`.
+- **Scheduled ingestion** via Vercel Cron (idempotent, `CRON_SECRET`-guarded),
+  and **manual/Cowork import** (`POST /api/import`, session-protected, RLS-scoped).
 
 ---
 
 ## Project layout
 
 ```
-supabase/migrations/0001_init.sql   full schema + RLS + updated_at triggers
+supabase/migrations/                0001 schema+RLS · 0002 profiles+CV bucket · 0003 AI scoring
 src/types/database.ts               hand-written DB types
 src/lib/supabase/                   browser / server / proxy / admin clients + auth
 src/lib/sources/                    NormalizedJob shape + 10 source fetchers + registry
 src/lib/discovery/                  normalize · dedupe · filters · ingest · import-schema (pure, tested)
-src/lib/actions/                    server actions: applications · jobs · sources · filters
-src/app/(app)/                      protected surfaces: needs-action · tracker · discovery · sources
+src/lib/ai/                         AI fit-scoring + CV prefill: pure core + server-only glue
+src/lib/demo/                       bundled fixtures for the read-only /demo
+src/lib/actions/                    server actions: applications · jobs · sources · filters · profile · scoring
+src/app/                            landing (/) · demo · login · legal
+src/app/(app)/                      protected surfaces: needs-action · tracker · discovery · sources · profile
 src/app/auth/                       callback · confirm · signout
 src/app/api/                        import · cron/ingest · applications/export
-tests/                              vitest suites (79 tests)
-docs/                               setup · testing · database · code-structure · cowork-import
+tests/                              vitest suites (normalize · dedupe · filters · profile · ai · sources)
+docs/                               setup · testing · database · code-structure · wireframes · cowork-import
 ```
 
 ## Documentation
@@ -136,7 +189,7 @@ Quality gate (all must be green before a phase is "done"):
 ```bash
 npm run typecheck    # tsc --noEmit
 npm run lint         # eslint
-npm test             # vitest (79 tests: normalize, dedupe, filters, sources, ingest, import)
+npm test             # vitest (139 tests: normalize, dedupe, filters, profile, ai, sources, ingest, import)
 npm run build        # next build
 ```
 
