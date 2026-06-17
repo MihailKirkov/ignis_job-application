@@ -1,6 +1,6 @@
 'use client';
 
-import { useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 
@@ -35,6 +35,7 @@ export function OnboardingChecklist({ steps }: { steps: OnboardingStep[] }) {
   // Server snapshot is always false, so the card SSRs and then hides on the
   // client if previously dismissed (useSyncExternalStore handles the swap).
   const dismissed = useSyncExternalStore(subscribe, isDismissed, () => false);
+  const [expanded, setExpanded] = useState(false);
 
   if (dismissed) return null;
 
@@ -42,6 +43,44 @@ export function OnboardingChecklist({ steps }: { steps: OnboardingStep[] }) {
 
   function dismiss() {
     dismissOnboarding();
+  }
+
+  // Once nearly complete (3/4+), collapse to a thin bar so it stops dominating
+  // the command bridge. The full checklist is one click away; dismissal persists.
+  const nearDone = done >= steps.length - 1;
+  if (nearDone && !expanded) {
+    return (
+      <section className="flex items-center justify-between gap-3 rounded-md border border-accent/30 bg-accent-soft/40 px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="hud-label text-accent">SETUP</span>
+          <span className="font-mono text-xs text-fg">
+            {done}/{steps.length}
+          </span>
+          <span className="truncate text-xs text-muted">
+            {done === steps.length ? 'All set — you’re ready to go.' : 'Almost there — one step left.'}
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {done < steps.length ? (
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="rounded px-2 py-1 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-fg"
+            >
+              Resume
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={dismiss}
+            className="rounded px-2 py-1 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-fg"
+            aria-label="Dismiss the setup checklist"
+          >
+            ✕
+          </button>
+        </div>
+      </section>
+    );
   }
 
   return (

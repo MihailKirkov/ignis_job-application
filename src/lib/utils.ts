@@ -46,6 +46,20 @@ export function formatDate(date: string | null | undefined): string {
   });
 }
 
+// Compact date + 24h time, e.g. "14 Jun 09:12". Used by the telemetry log feed.
+export function formatDateTime(date: string | null | undefined): string {
+  if (!date) return '—';
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
 // Compact salary range from numeric min/max, e.g. "€55k–70k".
 export function formatSalaryRange(
   min: number | null | undefined,

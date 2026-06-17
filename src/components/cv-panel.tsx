@@ -55,7 +55,7 @@ export function CvPanel({ profile }: { profile: ProfileRow | null }) {
   const hasFile = Boolean(profile?.cv_file_path);
 
   return (
-    <div className="space-y-3 rounded-[10px] border border-border bg-surface p-4">
+    <div className="space-y-3 border border-system/20 bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-fg">CV</h2>
         <CvSource profile={profile} />
@@ -66,7 +66,7 @@ export function CvPanel({ profile }: { profile: ProfileRow | null }) {
           type="file"
           name="file"
           accept="application/pdf,.pdf"
-          className="max-w-full text-sm text-muted file:mr-3 file:cursor-pointer file:rounded-md file:border file:border-border file:bg-bg file:px-3 file:py-2 file:text-sm file:text-fg hover:file:bg-surface-2"
+          className="max-w-full text-sm text-muted file:mr-3 file:cursor-pointer file:border file:border-system/30 file:bg-surface-2 file:px-3 file:py-2 file:text-sm file:text-fg hover:file:bg-surface-2"
         />
         <Button type="submit" variant="primary" disabled={pending}>
           {pending ? 'Uploading…' : hasFile ? 'Replace CV' : 'Upload PDF'}

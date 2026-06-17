@@ -8,6 +8,15 @@ import type {
   WorkMode,
 } from '@/types/database';
 
+// Mission target for the command-bridge countdown — the date the job search is
+// working toward. The primary clock counts down to the funding-runway end; the
+// milestone is a later, static reference point. Adjust as plans change.
+export const MISSION = {
+  label: 'RUNWAY END',
+  targetDate: '2026-07-31',
+  milestone: { label: 'EINDHOVEN MOVE', date: '2026-09-01' },
+} as const;
+
 export const APPLICATION_STATUSES: ApplicationStatus[] = [
   'To apply',
   'Applied',

@@ -61,9 +61,9 @@ export function PresetBar({ presets }: { presets: PresetItem[] }) {
         presets.map((p) => (
           <span
             key={p.id}
-            className="group inline-flex items-center gap-1 rounded-full border border-border bg-surface-2 pl-2.5 pr-1 py-0.5 text-xs text-fg"
+            className="group inline-flex items-center gap-1 border border-system/25 bg-surface-2 pl-2.5 pr-1 py-0.5 text-xs text-fg"
           >
-            <button type="button" onClick={() => apply(p.criteria)} className="hover:text-accent">
+            <button type="button" onClick={() => apply(p.criteria)} className="hover:text-system">
               {p.name}
             </button>
             <button
@@ -76,7 +76,7 @@ export function PresetBar({ presets }: { presets: PresetItem[] }) {
                   router.refresh();
                 })
               }
-              className="rounded-full px-1 text-faint hover:text-status-rejected"
+              className="px-1 text-faint hover:text-status-rejected"
             >
               ✕
             </button>

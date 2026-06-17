@@ -1,11 +1,14 @@
 import { createClient } from '@/lib/supabase/server';
-import { APPLICATION_STATUSES } from '@/lib/constants';
 import { isTerminal } from '@/lib/utils';
-import type { ApplicationRow, ApplicationStatus } from '@/types/database';
-import { ApplicationCard } from '@/components/application-card';
+import type { ApplicationRow, ApplicationStatus, ScoreVerdict } from '@/types/database';
 import { NewApplicationButton } from '@/components/application-dialog';
 import { TrackerToolbar } from '@/components/tracker-toolbar';
-import { EmptyState, Stat } from '@/components/ui';
+import { TrackerViewToggle } from '@/components/tracker-toggle';
+import { TrackerBoard } from '@/components/tracker-board';
+import { TrackerConsole } from '@/components/tracker-console';
+import { TrackerStats } from '@/components/tracker-stats';
+import type { FitMap } from '@/components/app-card';
+import { EmptyState } from '@/components/ui';
 
 // Strip characters that would break PostgREST `.or()` filter syntax.
 function sanitize(q: string): string {
@@ -15,9 +18,10 @@ function sanitize(q: string): string {
 export default async function TrackerPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; view?: string }>;
 }) {
-  const { q, status } = await searchParams;
+  const { q, status, view } = await searchParams;
+  const activeView: 'board' | 'console' = view === 'console' ? 'console' : 'board';
   const supabase = await createClient();
 
   // Pipeline stats (status column only, all rows).
@@ -26,7 +30,6 @@ export default async function TrackerPage({
     acc[r.status] = (acc[r.status] ?? 0) + 1;
     return acc;
   }, {});
-  const total = statRows?.length ?? 0;
   const active = (statRows ?? []).filter(
     (r) => !isTerminal(r.status as ApplicationStatus),
   ).length;
@@ -47,17 +50,36 @@ export default async function TrackerPage({
   const { data: rows } = await query;
   const applications = (rows ?? []) as ApplicationRow[];
 
+  // Fit scores for any applications promoted from a discovered job.
+  const jobIds = applications.map((a) => a.job_id).filter((id): id is string => Boolean(id));
+  const fitMap: FitMap = {};
+  if (jobIds.length > 0) {
+    const { data: jobFit } = await supabase
+      .from('jobs')
+      .select('id, fit_score, fit_verdict')
+      .in('id', jobIds)
+      .not('fit_score', 'is', null);
+    for (const j of (jobFit ?? []) as {
+      id: string;
+      fit_score: number;
+      fit_verdict: ScoreVerdict | null;
+    }[]) {
+      fitMap[j.id] = { score: j.fit_score, verdict: j.fit_verdict };
+    }
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-fg">Tracker</h1>
-          <p className="text-sm text-muted">Your application pipeline.</p>
+          <p className="hud-label">PIPELINE CONTROL</p>
+          <h1 className="mt-1.5 text-xl font-semibold text-fg">Tracker</h1>
         </div>
         <div className="flex items-center gap-2">
+          <TrackerViewToggle active={activeView} />
           <a
             href="/api/applications/export"
-            className="inline-flex h-9 items-center rounded-md border border-border bg-surface-2 px-3.5 text-sm text-fg transition-colors hover:bg-surface-2/70"
+            className="inline-flex h-9 items-center border border-system/30 bg-surface-2 px-3.5 text-sm text-fg transition-colors hover:border-system/60 hover:text-system"
           >
             Export JSON
           </a>
@@ -65,14 +87,7 @@ export default async function TrackerPage({
         </div>
       </header>
 
-      {/* Pipeline stats */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
-        <Stat label="Total" value={total} />
-        <Stat label="Active" value={active} accent />
-        {APPLICATION_STATUSES.map((s) => (
-          <Stat key={s} label={s} value={counts[s] ?? 0} />
-        ))}
-      </div>
+      <TrackerStats counts={counts} active={active} />
 
       <TrackerToolbar />
 
@@ -85,12 +100,10 @@ export default async function TrackerPage({
               : 'Add your first application, or promote a discovered job into the pipeline.'
           }
         />
+      ) : activeView === 'console' ? (
+        <TrackerConsole applications={applications} fitMap={fitMap} />
       ) : (
-        <div className="grid gap-3">
-          {applications.map((row) => (
-            <ApplicationCard key={row.id} row={row} />
-          ))}
-        </div>
+        <TrackerBoard applications={applications} fitMap={fitMap} />
       )}
     </div>
   );

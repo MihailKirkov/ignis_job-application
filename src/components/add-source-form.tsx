@@ -82,7 +82,7 @@ export function AddSourceButton() {
               name="config"
               value={config}
               onChange={(e) => setConfig(e.target.value)}
-              className="min-h-[96px] w-full resize-y rounded-md border border-border bg-bg px-3 py-2 font-mono text-xs text-fg focus:border-accent focus:outline-none"
+              className="min-h-[96px] w-full resize-y border border-system/30 bg-surface-2 px-3 py-2 font-mono text-xs text-fg focus:border-system focus:outline-none focus:shadow-[var(--glow-system)]"
             />
             <p className="mt-1 text-xs text-faint">Fields: {meta.configHint}</p>
           </div>

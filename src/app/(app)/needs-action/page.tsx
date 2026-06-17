@@ -1,11 +1,13 @@
 import { createClient } from '@/lib/supabase/server';
-import { TERMINAL_STATUSES } from '@/lib/constants';
-import { isOverdue, todayISO } from '@/lib/utils';
-import type { ApplicationRow, ProfileRow } from '@/types/database';
-import { ApplicationCard } from '@/components/application-card';
+import { MISSION, SOURCE_META, TERMINAL_STATUSES } from '@/lib/constants';
+import { computeVitals } from '@/lib/pipeline';
+import { formatDateTime, isOverdue, statusColorToken, todayISO } from '@/lib/utils';
+import type { ApplicationRow, ApplicationStatus, ProfileRow, ScoreVerdict } from '@/types/database';
+import { CommandBridge } from '@/components/needs-action-view';
+import type { FitMap } from '@/components/app-card';
+import type { LogEntry } from '@/components/hud';
 import { NewApplicationButton } from '@/components/application-dialog';
 import { OnboardingChecklist, type OnboardingStep } from '@/components/onboarding-checklist';
-import { EmptyState } from '@/components/ui';
 
 export default async function NeedsActionPage() {
   const supabase = await createClient();
@@ -15,6 +17,9 @@ export default async function NeedsActionPage() {
   const [
     { data },
     { data: profileRow },
+    { data: statusRows },
+    { data: recentApps },
+    { data: recentSources },
     { count: sourceCount },
     { count: jobCount },
     { count: scoredCount },
@@ -26,6 +31,18 @@ export default async function NeedsActionPage() {
       .not('status', 'in', notTerminal)
       .order('next_action_date', { ascending: true }),
     supabase.from('profiles').select('full_name, skills, cv_text').maybeSingle(),
+    supabase.from('applications').select('status'),
+    supabase
+      .from('applications')
+      .select('company, status, updated_at')
+      .order('updated_at', { ascending: false })
+      .limit(6),
+    supabase
+      .from('sources')
+      .select('type, last_run_at')
+      .not('last_run_at', 'is', null)
+      .order('last_run_at', { ascending: false })
+      .limit(5),
     supabase.from('sources').select('id', { count: 'exact', head: true }),
     supabase.from('jobs').select('id', { count: 'exact', head: true }),
     supabase
@@ -67,67 +84,71 @@ export default async function NeedsActionPage() {
   const overdue = rows.filter((r) => isOverdue(r.next_action_date));
   const dueToday = rows.filter((r) => !isOverdue(r.next_action_date));
 
+  const vitals = computeVitals((statusRows ?? []).map((r) => r.status as ApplicationStatus));
+
+  // Fit scores for the alert cards (only the due rows that came from a job).
+  const jobIds = rows.map((r) => r.job_id).filter((id): id is string => Boolean(id));
+  const fitMap: FitMap = {};
+  if (jobIds.length > 0) {
+    const { data: jobFit } = await supabase
+      .from('jobs')
+      .select('id, fit_score, fit_verdict')
+      .in('id', jobIds)
+      .not('fit_score', 'is', null);
+    for (const j of (jobFit ?? []) as {
+      id: string;
+      fit_score: number;
+      fit_verdict: ScoreVerdict | null;
+    }[]) {
+      fitMap[j.id] = { score: j.fit_score, verdict: j.fit_verdict };
+    }
+  }
+
+  // Telemetry: recent ingestion runs + recent application status changes.
+  const sourceEvents = ((recentSources ?? []) as { type: string; last_run_at: string }[]).map(
+    (s) => ({
+      ts: new Date(s.last_run_at).getTime(),
+      time: formatDateTime(s.last_run_at),
+      colorToken: 'status-applied',
+      text: (
+        <>
+          Ingestion run ·{' '}
+          <span className="text-fg">
+            {SOURCE_META[s.type as keyof typeof SOURCE_META]?.label ?? s.type}
+          </span>
+        </>
+      ),
+    }),
+  );
+  const appEvents = (
+    (recentApps ?? []) as Pick<ApplicationRow, 'company' | 'status' | 'updated_at'>[]
+  ).map((a) => ({
+    ts: new Date(a.updated_at).getTime(),
+    time: formatDateTime(a.updated_at),
+    colorToken: statusColorToken(a.status),
+    text: (
+      <>
+        <span className="text-fg">{a.company}</span> → {a.status}
+      </>
+    ),
+  }));
+  const telemetry: LogEntry[] = [...sourceEvents, ...appEvents]
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, 8)
+    .map(({ time, text, colorToken }) => ({ time, text, colorToken }));
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {onboardingComplete ? null : <OnboardingChecklist steps={steps} />}
-
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-fg">Needs action</h1>
-          <p className="text-sm text-muted">
-            {rows.length > 0 ? (
-              <>
-                <span className="font-mono text-fg">{rows.length}</span> item
-                {rows.length === 1 ? '' : 's'} due
-                {overdue.length > 0 ? (
-                  <>
-                    {' '}
-                    · <span className="text-status-rejected">{overdue.length} overdue</span>
-                  </>
-                ) : null}
-              </>
-            ) : (
-              'Everything on your pipeline is up to date.'
-            )}
-          </p>
-        </div>
-        <NewApplicationButton />
-      </header>
-
-      {rows.length === 0 ? (
-        <EmptyState
-          title="Queue is clear ✓"
-          hint="No overdue or due-today follow-ups. New items appear here when an application's next-action date arrives."
-        />
-      ) : (
-        <div className="space-y-6">
-          {overdue.length > 0 ? (
-            <section className="space-y-3">
-              <h2 className="text-xs font-medium uppercase tracking-wide text-status-rejected">
-                Overdue
-              </h2>
-              <div className="grid gap-3">
-                {overdue.map((row) => (
-                  <ApplicationCard key={row.id} row={row} highlightAction />
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          {dueToday.length > 0 ? (
-            <section className="space-y-3">
-              <h2 className="text-xs font-medium uppercase tracking-wide text-muted">
-                Due today
-              </h2>
-              <div className="grid gap-3">
-                {dueToday.map((row) => (
-                  <ApplicationCard key={row.id} row={row} highlightAction />
-                ))}
-              </div>
-            </section>
-          ) : null}
-        </div>
-      )}
+      <CommandBridge
+        mission={MISSION}
+        vitals={vitals}
+        overdue={overdue}
+        dueToday={dueToday}
+        telemetry={telemetry}
+        fitMap={fitMap}
+        actions={<NewApplicationButton />}
+      />
     </div>
   );
 }

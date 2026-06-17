@@ -61,7 +61,7 @@ export function ProfileForm({
   return (
     <form action={formAction} className="space-y-5">
       {aiEnabled ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-[10px] border border-border bg-surface p-3">
+        <div className="flex flex-wrap items-center gap-2 border border-system/20 bg-surface p-3">
           <Button type="button" variant="secondary" disabled={prefilling} onClick={onPrefill}>
             {prefilling ? 'Reading CV…' : '✦ Prefill from CV'}
           </Button>

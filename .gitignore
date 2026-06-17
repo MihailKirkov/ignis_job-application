@@ -46,3 +46,6 @@ next-env.d.ts
 
 # Supabase CLI temp
 supabase/.temp/
+
+# Local visual-loop screenshots
+.shots/

@@ -1,32 +1,64 @@
 @import 'tailwindcss';
 
 /* ===========================================================================
-   Command-center design tokens. One warm amber accent, everything else quiet.
-   Tailwind v4 reads these and generates utilities (bg-bg, text-muted, etc.).
+   Command Center HUD design tokens.
+
+   The data stays clean and high-contrast; the "HUD" vibe comes from a small,
+   recurring vocabulary — cyan system chrome, glowing hairlines, bracketed
+   corners — applied to structure, never to body text.
+
+   Color discipline:
+     • cyan   (--color-system)    — borders, active states, gauges, dividers
+     • magenta(--color-highlight) — sparing highlights / secondary signal
+     • amber  (--color-accent)    — RESERVED: primary action + "needs action"
+
+   Tailwind v4 reads --color-* and generates utilities (bg-bg, text-system, …).
+   --glow-* are plain custom properties consumed via var() / shadow-[...].
    =========================================================================== */
 @theme {
-  --color-bg: #0e1116; /* near-black canvas              */
-  --color-surface: #161b22; /* card surfaces                  */
-  --color-surface-2: #1b2330; /* raised / hover surfaces        */
-  --color-border: #262e38; /* hairline borders               */
-  --color-fg: #e6edf3; /* near-white primary text        */
-  --color-muted: #8b949e; /* secondary / muted grey         */
-  --color-faint: #6b7480; /* tertiary text                  */
+  --color-bg: #060a12; /* base canvas                    */
+  --color-surface: #0b1220; /* panel                          */
+  --color-surface-2: #0f1a2b; /* raised / hover                 */
+  --color-border: #1b2c44; /* quiet hairline borders         */
+  --color-fg: #e8f1f8; /* primary text                   */
+  --color-muted: #7c8da6; /* secondary text                 */
+  --color-faint: #566880; /* tertiary text                  */
 
-  --color-accent: #f5b544; /* the ONE warm amber accent      */
-  --color-accent-fg: #0e1116; /* text on amber                  */
-  --color-accent-soft: #2a2418; /* amber tint background          */
+  /* System cyan — the HUD's structural accent. */
+  --color-system: #22d3ee;
+  --color-system-soft: #0c2230; /* cyan-tinted fill           */
 
-  /* Pipeline status colors */
-  --color-status-applied: #4c8dff; /* blue    */
-  --color-status-screening: #a371f7; /* violet  */
-  --color-status-interview: #f5b544; /* amber   */
-  --color-status-offer: #3fb950; /* green   */
-  --color-status-rejected: #f85149; /* red     */
-  --color-status-grey: #8b949e; /* To apply / Closed */
+  /* Magenta highlight — sparing emphasis. */
+  --color-highlight: #ff2e88;
 
-  --color-danger: #f85149;
-  --color-success: #3fb950;
+  /* The ONE amber accent — primary action + "needs action" only. */
+  --color-accent: #f5b544;
+  --color-accent-fg: #060a12;
+  --color-accent-soft: #241c0d; /* amber tint background      */
+
+  /* Pipeline status colors. */
+  --color-status-grey: #7c8da6; /* To apply / Closed (dim)    */
+  --color-status-applied: #22d3ee; /* cyan                    */
+  --color-status-screening: #a371f7; /* violet                */
+  --color-status-interview: #f5b544; /* amber                 */
+  --color-status-offer: #2de3a0; /* green                     */
+  --color-status-rejected: #fb5a4b; /* red                    */
+
+  --color-danger: #fb5a4b;
+  --color-success: #2de3a0;
+
+  /* Glow tokens — box-shadows keyed by the matching --color-* token name, so a
+     component can do shadow-[var(--glow-<colorToken>)]. Borders/dividers/active
+     states only — never body text. */
+  --glow-system: 0 0 12px -2px color-mix(in srgb, var(--color-system) 70%, transparent);
+  --glow-highlight: 0 0 12px -2px color-mix(in srgb, var(--color-highlight) 70%, transparent);
+  --glow-accent: 0 0 12px -2px color-mix(in srgb, var(--color-accent) 70%, transparent);
+  --glow-status-grey: 0 0 8px -2px color-mix(in srgb, var(--color-status-grey) 55%, transparent);
+  --glow-status-applied: 0 0 12px -2px color-mix(in srgb, var(--color-status-applied) 70%, transparent);
+  --glow-status-screening: 0 0 12px -2px color-mix(in srgb, var(--color-status-screening) 70%, transparent);
+  --glow-status-interview: 0 0 12px -2px color-mix(in srgb, var(--color-status-interview) 70%, transparent);
+  --glow-status-offer: 0 0 12px -2px color-mix(in srgb, var(--color-status-offer) 70%, transparent);
+  --glow-status-rejected: 0 0 12px -2px color-mix(in srgb, var(--color-status-rejected) 70%, transparent);
 
   --radius-card: 10px;
 
@@ -50,17 +82,31 @@
 
   body {
     background-color: var(--color-bg);
+    /* Faint cyan grid behind all content (~5% alpha, static). */
+    background-image:
+      linear-gradient(
+        to right,
+        color-mix(in srgb, var(--color-system) 5%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in srgb, var(--color-system) 5%, transparent) 1px,
+        transparent 1px
+      );
+    background-size: 38px 38px;
+    background-attachment: fixed;
     color: var(--color-fg);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
 
-  /* Visible keyboard focus everywhere. */
+  /* Visible keyboard focus everywhere (cyan — system chrome). Sharp, no radius. */
   :focus-visible {
-    outline: 2px solid var(--color-accent);
+    outline: 2px solid var(--color-system);
     outline-offset: 2px;
-    border-radius: 4px;
+    border-radius: 0;
   }
 
   /* Tabular figures for the monospace data (dates, counts, salaries). */
@@ -69,18 +115,147 @@
   }
 
   ::selection {
-    background: var(--color-accent);
-    color: var(--color-accent-fg);
+    background: var(--color-system);
+    color: var(--color-bg);
   }
 
-  /* Quiet, dark scrollbars. */
+  /* Thin, cyan-tinted scrollbars on a dark track. */
   * {
     scrollbar-width: thin;
-    scrollbar-color: var(--color-border) transparent;
+    scrollbar-color: color-mix(in srgb, var(--color-system) 32%, var(--color-border))
+      transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-bg);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--color-system) 28%, var(--color-border));
+    border: 2px solid var(--color-bg);
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--color-system) 50%, var(--color-border));
+  }
+  ::-webkit-scrollbar-corner {
+    background: var(--color-bg);
   }
 }
 
-/* Respect reduced-motion: kill non-essential animation. */
+/* ===========================================================================
+   HUD utilities — the recurring vocabulary, defined once.
+   Panel framing is drawn by the <HudFrame> SVG primitive, NOT by CSS borders.
+   =========================================================================== */
+@layer components {
+  /* Crisp cyan hairline divider (shell + ad-hoc separators). */
+  .hud-rule {
+    height: 1px;
+    background: linear-gradient(
+      to right,
+      color-mix(in srgb, var(--color-system) 50%, transparent),
+      transparent
+    );
+  }
+
+  /* Monospace micro-label. */
+  .hud-label {
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: 10px;
+    line-height: 1;
+    color: var(--color-muted);
+  }
+
+  /* Diagonal-hatch accent block (header rules, HUD chrome). */
+  .hud-hatch {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      var(--color-system) 0,
+      var(--color-system) 1px,
+      transparent 1px,
+      transparent 4px
+    );
+    opacity: 0.85;
+  }
+
+  /* Segmented baseline tick bar used inside stat readouts. */
+  .hud-tick {
+    width: 2px;
+    height: 100%;
+    background-color: color-mix(in srgb, var(--color-system) 22%, transparent);
+  }
+  .hud-tick-on {
+    background-color: var(--color-system);
+    box-shadow: 0 0 4px -1px var(--color-system);
+  }
+
+  /* HUD form field: dark fill, SHARP corners, hairline cyan border, cyan focus
+     glow, mono text. */
+  .hud-field {
+    width: 100%;
+    border-radius: 0;
+    border: 1px solid color-mix(in srgb, var(--color-system) 35%, var(--color-border));
+    background-color: var(--color-surface-2);
+    color: var(--color-fg);
+    font-family: var(--font-mono);
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+  .hud-field::placeholder {
+    color: var(--color-faint);
+    font-family: var(--font-sans);
+  }
+  .hud-field:focus {
+    outline: none;
+    border-color: var(--color-system);
+    box-shadow: var(--glow-system);
+  }
+
+  /* Native <select> caret, drawn in cyan so it matches the HUD. */
+  .hud-select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' stroke='%2322d3ee' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.65rem center;
+    background-size: 0.7rem;
+    padding-right: 2rem;
+  }
+
+  /* Chamfered control: 45° cut on top-left + bottom-right. For buttons (no
+     box-shadow glow, which clip-path would otherwise cut). */
+  .hud-cut {
+    clip-path: polygon(
+      7px 0,
+      100% 0,
+      100% calc(100% - 7px),
+      calc(100% - 7px) 100%,
+      0 100%,
+      0 7px
+    );
+  }
+}
+
+/* Slow pulse for "alert" LEDs / a single ambient ring. */
+@keyframes hud-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.hud-pulse {
+  animation: hud-pulse 1.8s ease-in-out infinite;
+}
+
+/* Respect reduced-motion: kill ALL animation. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -89,5 +264,8 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+  .hud-pulse {
+    animation: none !important;
   }
 }

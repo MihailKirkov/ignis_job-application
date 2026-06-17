@@ -41,7 +41,7 @@ export default function LegalPage() {
       </p>
       <ul className="mt-6 space-y-3">
         {SOURCES.map((s) => (
-          <li key={s.name} className="rounded-[10px] border border-border bg-surface p-3">
+          <li key={s.name} className="border border-system/20 bg-surface p-3">
             <a
               href={s.url}
               target="_blank"

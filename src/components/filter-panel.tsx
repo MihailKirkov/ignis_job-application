@@ -29,9 +29,9 @@ function CheckChip({
       aria-checked={checked}
       onClick={onClick}
       className={cn(
-        'rounded-full border px-2.5 py-1 text-xs capitalize transition-colors',
+        'border px-2.5 py-1 text-xs capitalize transition-colors',
         checked
-          ? 'border-accent/40 bg-accent-soft text-fg'
+          ? 'border-system/50 bg-system/10 text-system'
           : 'border-border text-muted hover:text-fg',
       )}
     >
@@ -93,7 +93,7 @@ export function FilterPanel() {
   }
 
   return (
-    <div className="rounded-[10px] border border-border bg-surface">
+    <div className="border border-system/20 bg-surface">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -103,7 +103,7 @@ export function FilterPanel() {
         <span className="flex items-center gap-2">
           Filters
           {activeCount > 0 ? (
-            <span className="rounded-full bg-accent px-1.5 py-0.5 font-mono text-[10px] font-semibold text-accent-fg">
+            <span className="bg-accent px-1.5 py-0.5 font-mono text-[10px] font-semibold text-accent-fg">
               {activeCount}
             </span>
           ) : null}

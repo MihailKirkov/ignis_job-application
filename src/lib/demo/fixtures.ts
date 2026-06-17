@@ -200,15 +200,89 @@ export const DEMO_JOBS: JobRow[] = [
       ['On-site Amsterdam'],
     ),
   }),
+  job({
+    id: 'demo-job-7',
+    source: 'ashby',
+    title: 'Senior Product Engineer',
+    company: 'Framer',
+    location: 'Remote — EU',
+    mode: 'Remote',
+    salary_min: 80000,
+    salary_max: 110000,
+    currency: 'EUR',
+    url: 'https://www.example.com/jobs/framer-product',
+    description:
+      'Own end-to-end product features on a design-tool used by millions. React, TypeScript, canvas rendering and a very high craft bar.',
+    posted_at: '2026-06-11T00:00:00.000Z',
+    ...scored(
+      88,
+      'strong',
+      'Remote-EU, top of your salary range, and a React/TypeScript craft culture that matches your design-systems strength. Canvas rendering is a fun stretch.',
+      ['React', 'TypeScript', 'Design systems'],
+      ['Canvas/WebGL'],
+    ),
+  }),
+  job({
+    id: 'demo-job-8',
+    source: 'workable',
+    title: 'Frontend Engineer — Maps',
+    company: 'TomTom',
+    location: 'Amsterdam',
+    mode: 'Hybrid',
+    salary_min: 62000,
+    salary_max: 80000,
+    currency: 'EUR',
+    url: 'https://www.example.com/jobs/tomtom-maps',
+    description:
+      'Build the web SDK and demos for the Maps platform. TypeScript, WebGL, and a strong API-design focus.',
+    posted_at: '2026-06-10T00:00:00.000Z',
+    ...scored(
+      69,
+      'medium',
+      'Solid TypeScript role within range; WebGL/maps is a domain stretch and Amsterdam is a longer commute than your Eindhoven preference.',
+      ['TypeScript', 'API design'],
+      ['WebGL', 'Amsterdam location'],
+    ),
+  }),
+  job({
+    id: 'demo-job-9',
+    source: 'adzuna',
+    title: 'React Developer',
+    company: 'Backbase',
+    location: 'Amsterdam',
+    mode: 'Hybrid',
+    salary_min: 58000,
+    salary_max: 72000,
+    currency: 'EUR',
+    url: 'https://www.example.com/jobs/backbase-react',
+    description:
+      'Engineering the web banking platform used by tier-1 banks. React, TypeScript and a component-library mindset.',
+    posted_at: '2026-06-09T00:00:00.000Z',
+    ...scored(
+      64,
+      'medium',
+      'On-stack React/TypeScript at the lower end of your range. Fintech platform work is relevant; salary band and Amsterdam are the trade-offs.',
+      ['React', 'TypeScript'],
+      ['Salary band', 'Amsterdam location'],
+    ),
+  }),
 ];
 
 // Per-tab counts for the Discovery view (mirrors what the real query computes).
 export const DEMO_JOB_COUNTS: Record<JobState, number> = {
   new: DEMO_JOBS.filter((j) => j.state === 'new').length,
   saved: 1,
-  dismissed: 3,
-  promoted: 2,
+  dismissed: 4,
+  promoted: 6,
 };
+
+// Recent ingestion runs — feeds the command-bridge telemetry log.
+export const DEMO_SOURCES: { type: string; last_run_at: string }[] = [
+  { type: 'adzuna', last_run_at: '2026-06-12T07:40:00.000Z' },
+  { type: 'greenhouse', last_run_at: '2026-06-12T07:10:00.000Z' },
+  { type: 'remotive', last_run_at: '2026-06-11T22:05:00.000Z' },
+  { type: 'lever', last_run_at: '2026-06-11T18:30:00.000Z' },
+];
 
 // --------------------------------------------------------------------------- applications
 function application(
@@ -237,6 +311,7 @@ function application(
 export const DEMO_APPLICATIONS: ApplicationRow[] = [
   application({
     id: 'demo-app-1',
+    job_id: 'demo-job-1',
     company: 'ASML',
     role: 'Senior Frontend Engineer',
     location: 'Eindhoven',
@@ -248,9 +323,11 @@ export const DEMO_APPLICATIONS: ApplicationRow[] = [
     date_applied: '2026-06-02',
     next_action: 'Prep the system-design round',
     next_action_date: '2026-06-10', // overdue
+    updated_at: '2026-06-11T15:20:00.000Z',
   }),
   application({
     id: 'demo-app-2',
+    job_id: 'demo-job-3',
     company: 'Booking.com',
     role: 'Frontend Engineer',
     location: 'Amsterdam',
@@ -261,9 +338,11 @@ export const DEMO_APPLICATIONS: ApplicationRow[] = [
     date_applied: '2026-06-04',
     next_action: 'Follow up with the hiring manager',
     next_action_date: '2026-06-09', // overdue
+    updated_at: '2026-06-09T09:00:00.000Z',
   }),
   application({
     id: 'demo-app-3',
+    job_id: 'demo-job-2',
     company: 'Philips',
     role: 'Full-stack Engineer (React / Node)',
     location: 'Eindhoven',
@@ -274,6 +353,7 @@ export const DEMO_APPLICATIONS: ApplicationRow[] = [
     date_applied: '2026-06-06',
     next_action: 'Reply to recruiter with availability',
     next_action_date: '2026-06-12', // due today
+    updated_at: '2026-06-12T06:30:00.000Z',
   }),
   application({
     id: 'demo-app-4',
@@ -286,10 +366,12 @@ export const DEMO_APPLICATIONS: ApplicationRow[] = [
     salary: '€95k',
     date_applied: '2026-05-20',
     next_action: 'Review the offer letter',
-    next_action_date: '2026-06-15', // upcoming (not in needs-action yet)
+    next_action_date: '2026-06-16', // upcoming
+    updated_at: '2026-06-11T11:45:00.000Z',
   }),
   application({
     id: 'demo-app-5',
+    job_id: 'demo-job-4',
     company: 'GitLab',
     role: 'Frontend Engineer (Remote, EU)',
     location: 'Remote — EU',
@@ -297,9 +379,11 @@ export const DEMO_APPLICATIONS: ApplicationRow[] = [
     channel: 'Direct',
     status: 'To apply',
     salary: '€72–95k',
+    updated_at: '2026-06-08T12:00:00.000Z',
   }),
   application({
     id: 'demo-app-6',
+    job_id: 'demo-job-6',
     company: 'Adyen',
     role: 'Senior React Engineer',
     location: 'Amsterdam',
@@ -308,6 +392,87 @@ export const DEMO_APPLICATIONS: ApplicationRow[] = [
     status: 'Rejected',
     date_applied: '2026-05-12',
     notes: 'Wanted on-site 5 days/week.',
+    updated_at: '2026-06-05T16:00:00.000Z',
+  }),
+  application({
+    id: 'demo-app-7',
+    job_id: 'demo-job-8',
+    company: 'TomTom',
+    role: 'Frontend Engineer — Maps',
+    location: 'Amsterdam',
+    mode: 'Hybrid',
+    channel: 'LinkedIn',
+    status: 'Screening',
+    salary: '€62–80k',
+    date_applied: '2026-06-03',
+    next_action: 'Send code sample to recruiter',
+    next_action_date: '2026-06-11', // overdue
+    updated_at: '2026-06-10T14:10:00.000Z',
+  }),
+  application({
+    id: 'demo-app-8',
+    job_id: 'demo-job-9',
+    company: 'Backbase',
+    role: 'React Developer',
+    location: 'Amsterdam',
+    mode: 'Hybrid',
+    channel: 'Brainport portal',
+    status: 'Applied',
+    salary: '€58–72k',
+    date_applied: '2026-06-07',
+    next_action: 'Expect recruiter screen',
+    next_action_date: '2026-06-18', // upcoming
+    updated_at: '2026-06-07T10:30:00.000Z',
+  }),
+  application({
+    id: 'demo-app-9',
+    company: 'Bol.com',
+    role: 'Senior Frontend Engineer',
+    location: 'Utrecht',
+    mode: 'Hybrid',
+    channel: 'Recruiter',
+    status: 'Interview',
+    salary: '€70–88k',
+    date_applied: '2026-05-28',
+    next_action: 'On-site loop — confirm logistics',
+    next_action_date: '2026-06-12', // due today
+    updated_at: '2026-06-11T17:00:00.000Z',
+  }),
+  application({
+    id: 'demo-app-10',
+    company: 'Picnic',
+    role: 'Frontend Engineer',
+    location: 'Amsterdam',
+    mode: 'On-site',
+    channel: 'Direct',
+    status: 'To apply',
+    salary: '€60–78k',
+    updated_at: '2026-06-12T05:00:00.000Z',
+  }),
+  application({
+    id: 'demo-app-11',
+    job_id: 'demo-job-5',
+    company: 'NXP Semiconductors',
+    role: 'Embedded C++ Engineer',
+    location: 'Eindhoven',
+    mode: 'On-site',
+    channel: 'Detachering',
+    status: 'Rejected',
+    date_applied: '2026-05-08',
+    notes: 'Not a frontend role — withdrew after the screen.',
+    updated_at: '2026-05-30T13:00:00.000Z',
+  }),
+  application({
+    id: 'demo-app-12',
+    company: 'Coolblue',
+    role: 'Frontend Engineer',
+    location: 'Rotterdam',
+    mode: 'Hybrid',
+    channel: 'Direct',
+    status: 'Closed',
+    date_applied: '2026-05-15',
+    notes: 'Role was put on hold by the company.',
+    updated_at: '2026-06-01T08:00:00.000Z',
   }),
 ];
 

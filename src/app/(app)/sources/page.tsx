@@ -42,13 +42,13 @@ export default async function SourcesPage() {
             return (
               <div
                 key={s.id}
-                className="flex items-start justify-between gap-3 rounded-[10px] border border-border bg-surface p-4"
+                className="flex items-start justify-between gap-3 border border-system/20 bg-surface p-4"
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-fg">{meta.label}</span>
                     {!s.enabled ? (
-                      <span className="rounded-full border border-border px-1.5 py-0.5 text-[10px] text-faint">
+                      <span className="border border-border px-1.5 py-0.5 text-[10px] text-faint">
                         disabled
                       </span>
                     ) : null}

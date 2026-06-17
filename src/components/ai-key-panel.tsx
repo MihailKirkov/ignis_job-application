@@ -23,7 +23,7 @@ export function AiKeyPanel({
   }, [state, router]);
 
   return (
-    <div className="space-y-3 rounded-[10px] border border-border bg-surface p-4">
+    <div className="space-y-3 border border-system/20 bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-fg">AI · Anthropic API key</h2>
         {hasKey ? (
