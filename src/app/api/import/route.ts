@@ -32,8 +32,15 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const upserted = await persistJobs(supabase, user.id, jobs);
-    return NextResponse.json({ ok: true, imported: upserted, skipped: errors.length, errors });
+    const { fetched, new: created, updated } = await persistJobs(supabase, user.id, jobs);
+    return NextResponse.json({
+      ok: true,
+      imported: fetched,
+      new: created,
+      updated,
+      skipped: errors.length,
+      errors,
+    });
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : 'Import failed.' },

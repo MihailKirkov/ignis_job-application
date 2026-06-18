@@ -42,6 +42,28 @@ export type Seniority =
 // A single profile link, stored in the profiles.links jsonb array.
 export type ProfileLink = { label: string; url: string };
 
+// Activity log + ingestion log -------------------------------------------------
+
+export type ActivityCategory = 'application' | 'job' | 'profile' | 'source' | 'ingestion';
+
+// Append-only event vocabulary. The category is derivable from the type prefix.
+export type ActivityType =
+  | 'application.created'
+  | 'application.status_changed'
+  | 'application.deleted'
+  | 'job.promoted'
+  | 'job.saved'
+  | 'job.dismissed'
+  | 'profile.updated'
+  | 'source.added'
+  | 'source.removed'
+  | 'source.toggled'
+  | 'ingestion.completed';
+
+export type IngestionTrigger = 'manual_all' | 'manual_source' | 'cron';
+export type RunStatus = 'ok' | 'partial' | 'error';
+export type RunSourceStatus = 'ok' | 'error' | 'skipped';
+
 export type SourceType =
   | 'adzuna'
   | 'arbeitnow'
@@ -146,6 +168,52 @@ export type ProfileRow = {
   updated_at: string;
 };
 
+// activity_events is an append-only feed; entity_id has NO FK (log outlives the
+// entity). meta is event-shaped (see buildActivitySummary).
+export type ActivityEventRow = {
+  id: string;
+  user_id: string;
+  type: ActivityType;
+  category: ActivityCategory;
+  entity_type: string | null;
+  entity_id: string | null;
+  summary: string;
+  meta: Record<string, unknown>;
+  created_at: string;
+};
+
+export type IngestionRunRow = {
+  id: string;
+  user_id: string;
+  trigger: IngestionTrigger;
+  status: RunStatus;
+  sources_run: number;
+  jobs_fetched: number;
+  jobs_new: number;
+  jobs_updated: number;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number | null;
+  created_at: string;
+};
+
+export type IngestionRunSourceRow = {
+  id: string;
+  run_id: string;
+  user_id: string;
+  source_id: string | null;
+  source_type: string;
+  source_label: string | null;
+  status: RunSourceStatus;
+  http_status: number | null;
+  jobs_fetched: number;
+  jobs_new: number;
+  jobs_updated: number;
+  duration_ms: number | null;
+  message: string | null;
+  created_at: string;
+};
+
 // user_secrets is one row per user; anthropic_api_key is stored ENCRYPTED.
 export type UserSecretRow = {
   user_id: string;
@@ -176,6 +244,9 @@ export type Database = {
       saved_filters: TableShape<SavedFilterRow>;
       profiles: TableShape<ProfileRow>;
       user_secrets: TableShape<UserSecretRow>;
+      activity_events: TableShape<ActivityEventRow>;
+      ingestion_runs: TableShape<IngestionRunRow>;
+      ingestion_run_sources: TableShape<IngestionRunSourceRow>;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

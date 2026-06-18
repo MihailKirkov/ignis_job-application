@@ -1,4 +1,6 @@
 import type {
+  ActivityCategory,
+  ActivityType,
   ApplicationStatus,
   Channel,
   JobState,
@@ -62,6 +64,49 @@ export const FIT_VERDICT_COLOR: Record<ScoreVerdict, string> = {
   strong: 'status-offer', // green
   medium: 'status-interview', // amber
   weak: 'status-rejected', // red
+};
+
+// Activity log -----------------------------------------------------------------
+
+export const ACTIVITY_CATEGORIES: ActivityCategory[] = [
+  'application',
+  'job',
+  'profile',
+  'source',
+  'ingestion',
+];
+
+// The full append-only event vocabulary (category derives from the prefix).
+export const ACTIVITY_TYPES: ActivityType[] = [
+  'application.created',
+  'application.status_changed',
+  'application.deleted',
+  'job.promoted',
+  'job.saved',
+  'job.dismissed',
+  'profile.updated',
+  'source.added',
+  'source.removed',
+  'source.toggled',
+  'ingestion.completed',
+];
+
+// Category → colour token (drives the telemetry LED + /activity dots) and a
+// short uppercase glyph used as the feed icon.
+export const ACTIVITY_CATEGORY_COLOR: Record<ActivityCategory, string> = {
+  application: 'status-applied',
+  job: 'system',
+  profile: 'status-interview',
+  source: 'status-screening',
+  ingestion: 'status-offer',
+};
+
+export const ACTIVITY_CATEGORY_ICON: Record<ActivityCategory, string> = {
+  application: 'APP',
+  job: 'JOB',
+  profile: 'PRF',
+  source: 'SRC',
+  ingestion: 'ING',
 };
 
 export const SOURCE_TYPES: SourceType[] = [

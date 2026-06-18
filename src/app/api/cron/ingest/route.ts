@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { serverFetchContext } from '@/lib/sources';
-import { runFetchers, persistJobs } from '@/lib/discovery/ingest';
+import { executeIngestion } from '@/lib/discovery/ingest';
+import { recordIngestionRun } from '@/lib/activity/record-run';
 import type { SourceRow } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
@@ -41,33 +42,57 @@ export async function GET(request: NextRequest) {
   }
 
   const ctx = serverFetchContext();
-  const ranAt = new Date().toISOString();
   const summary: {
     users: number;
-    totalUpserted: number;
-    perUser: { userId: string; upserted: number; sources: number; errors: string[] }[];
-  } = { users: byUser.size, totalUpserted: 0, perUser: [] };
+    totalFetched: number;
+    totalNew: number;
+    totalUpdated: number;
+    perUser: {
+      userId: string;
+      runId: string | null;
+      fetched: number;
+      new: number;
+      updated: number;
+      sources: number;
+      status: string;
+    }[];
+  } = { users: byUser.size, totalFetched: 0, totalNew: 0, totalUpdated: 0, perUser: [] };
 
   for (const [userId, sources] of byUser) {
-    const { jobs, results } = await runFetchers(
+    const startedAt = new Date().toISOString();
+    const outcome = await executeIngestion(
+      admin,
+      userId,
       sources.map((s) => ({ id: s.id, type: s.type, config: s.config })),
       ctx,
     );
-    let upserted = 0;
-    const errors = results.filter((r) => r.error).map((r) => `${r.type}: ${r.error}`);
-    try {
-      upserted = await persistJobs(admin, userId, jobs);
-    } catch (err) {
-      errors.push(err instanceof Error ? err.message : String(err));
-    }
+    const finishedAt = new Date().toISOString();
+
     await admin
       .from('sources')
-      .update({ last_run_at: ranAt })
+      .update({ last_run_at: finishedAt })
       .in('id', sources.map((s) => s.id));
 
-    summary.totalUpserted += upserted;
-    summary.perUser.push({ userId, upserted, sources: sources.length, errors });
+    const runId = await recordIngestionRun(admin, userId, {
+      trigger: 'cron',
+      startedAt,
+      finishedAt,
+      outcome,
+    });
+
+    summary.totalFetched += outcome.fetched;
+    summary.totalNew += outcome.new;
+    summary.totalUpdated += outcome.updated;
+    summary.perUser.push({
+      userId,
+      runId,
+      fetched: outcome.fetched,
+      new: outcome.new,
+      updated: outcome.updated,
+      sources: sources.length,
+      status: outcome.status,
+    });
   }
 
-  return NextResponse.json({ ok: true, ranAt, ...summary });
+  return NextResponse.json({ ok: true, ...summary });
 }

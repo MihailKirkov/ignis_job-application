@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { requireUser } from '@/lib/supabase/auth';
+import { logActivity } from '@/lib/activity/log';
 import {
   buildProfilePayload,
   sanitizeCvText,
@@ -16,6 +17,22 @@ const MAX_PDF_BYTES = 10 * 1024 * 1024; // 10 MB
 
 function revalidate() {
   revalidatePath('/profile');
+  revalidatePath('/activity');
+}
+
+// Which scalar/array fields actually changed, so the feed can say
+// "Updated profile (skills, summary)". Compared by value (JSON for arrays).
+function changedFields(
+  prev: Record<string, unknown> | null,
+  next: Record<string, unknown>,
+): string[] {
+  const changed: string[] = [];
+  for (const key of Object.keys(next)) {
+    const a = prev ? prev[key] : undefined;
+    const b = next[key];
+    if (JSON.stringify(a ?? null) !== JSON.stringify(b ?? null)) changed.push(key);
+  }
+  return changed;
 }
 
 function str(fd: FormData, key: string): string | null {
@@ -51,17 +68,40 @@ export async function saveProfile(
   if (error) return { ok: false, error };
 
   const cvText = sanitizeCvText(str(fd, 'cv_text'));
+  const nextCv = cvText === '' ? null : cvText;
 
   const supabase = await createClient();
+
+  // Diff against the prior row to report which fields changed in the feed.
+  const fieldKeys = Object.keys(payload);
+  const { data: prior } = await supabase
+    .from('profiles')
+    .select([...fieldKeys, 'cv_text'].join(', '))
+    .maybeSingle();
+  const priorRow = (prior ?? null) as Record<string, unknown> | null;
+
   const { error: dbError } = await supabase.from('profiles').upsert(
     {
       user_id: user.id,
       ...payload,
-      cv_text: cvText === '' ? null : cvText,
+      cv_text: nextCv,
     },
     { onConflict: 'user_id' },
   );
   if (dbError) return { ok: false, error: dbError.message };
+
+  const changed = changedFields(priorRow, { ...payload });
+  if (JSON.stringify((priorRow?.cv_text as string) ?? null) !== JSON.stringify(nextCv)) {
+    changed.push('cv');
+  }
+  if (changed.length > 0) {
+    await logActivity(supabase, user.id, {
+      type: 'profile.updated',
+      entityType: 'profile',
+      entityId: user.id,
+      meta: { changed },
+    });
+  }
 
   revalidate();
   return { ok: true };
@@ -118,6 +158,12 @@ export async function uploadCv(
   );
   if (dbError) return { ok: false, error: dbError.message };
 
+  await logActivity(supabase, user.id, {
+    type: 'profile.updated',
+    entityType: 'profile',
+    entityId: user.id,
+    meta: { changed: ['cv'] },
+  });
   revalidate();
   return { ok: true };
 }
@@ -129,5 +175,11 @@ export async function removeCvFile(): Promise<void> {
   const path = `${user.id}/cv.pdf`;
   await supabase.storage.from(CV_BUCKET).remove([path]);
   await supabase.from('profiles').update({ cv_file_path: null }).eq('user_id', user.id);
+  await logActivity(supabase, user.id, {
+    type: 'profile.updated',
+    entityType: 'profile',
+    entityId: user.id,
+    meta: { changed: ['cv'] },
+  });
   revalidate();
 }

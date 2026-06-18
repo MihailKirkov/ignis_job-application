@@ -1,8 +1,16 @@
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { MISSION, SOURCE_META, TERMINAL_STATUSES } from '@/lib/constants';
+import { ACTIVITY_CATEGORY_COLOR, MISSION, TERMINAL_STATUSES } from '@/lib/constants';
 import { computeVitals } from '@/lib/pipeline';
-import { formatDateTime, isOverdue, statusColorToken, todayISO } from '@/lib/utils';
-import type { ApplicationRow, ApplicationStatus, ProfileRow, ScoreVerdict } from '@/types/database';
+import { formatDateTime, isOverdue, todayISO } from '@/lib/utils';
+import { activityHref } from '@/lib/activity/feed';
+import type {
+  ActivityEventRow,
+  ApplicationRow,
+  ApplicationStatus,
+  ProfileRow,
+  ScoreVerdict,
+} from '@/types/database';
 import { CommandBridge } from '@/components/needs-action-view';
 import type { FitMap } from '@/components/app-card';
 import type { LogEntry } from '@/components/hud';
@@ -18,8 +26,7 @@ export default async function NeedsActionPage() {
     { data },
     { data: profileRow },
     { data: statusRows },
-    { data: recentApps },
-    { data: recentSources },
+    { data: activityRows },
     { count: sourceCount },
     { count: jobCount },
     { count: scoredCount },
@@ -33,16 +40,10 @@ export default async function NeedsActionPage() {
     supabase.from('profiles').select('full_name, skills, cv_text').maybeSingle(),
     supabase.from('applications').select('status'),
     supabase
-      .from('applications')
-      .select('company, status, updated_at')
-      .order('updated_at', { ascending: false })
-      .limit(6),
-    supabase
-      .from('sources')
-      .select('type, last_run_at')
-      .not('last_run_at', 'is', null)
-      .order('last_run_at', { ascending: false })
-      .limit(5),
+      .from('activity_events')
+      .select('category, summary, meta, created_at')
+      .order('created_at', { ascending: false })
+      .limit(10),
     supabase.from('sources').select('id', { count: 'exact', head: true }),
     supabase.from('jobs').select('id', { count: 'exact', head: true }),
     supabase
@@ -104,38 +105,21 @@ export default async function NeedsActionPage() {
     }
   }
 
-  // Telemetry: recent ingestion runs + recent application status changes.
-  const sourceEvents = ((recentSources ?? []) as { type: string; last_run_at: string }[]).map(
-    (s) => ({
-      ts: new Date(s.last_run_at).getTime(),
-      time: formatDateTime(s.last_run_at),
-      colorToken: 'status-applied',
-      text: (
-        <>
-          Ingestion run ·{' '}
-          <span className="text-fg">
-            {SOURCE_META[s.type as keyof typeof SOURCE_META]?.label ?? s.type}
-          </span>
-        </>
-      ),
-    }),
-  );
-  const appEvents = (
-    (recentApps ?? []) as Pick<ApplicationRow, 'company' | 'status' | 'updated_at'>[]
-  ).map((a) => ({
-    ts: new Date(a.updated_at).getTime(),
-    time: formatDateTime(a.updated_at),
-    colorToken: statusColorToken(a.status),
+  // Telemetry: the unified activity feed (latest ~10), each line linking to its
+  // entity (ingestion events deep-link to the run on /activity).
+  const events = (activityRows ?? []) as Pick<
+    ActivityEventRow,
+    'category' | 'summary' | 'meta' | 'created_at'
+  >[];
+  const telemetry: LogEntry[] = events.map((e) => ({
+    time: formatDateTime(e.created_at),
+    colorToken: ACTIVITY_CATEGORY_COLOR[e.category] ?? 'system',
     text: (
-      <>
-        <span className="text-fg">{a.company}</span> → {a.status}
-      </>
+      <Link href={activityHref(e)} className="transition-colors hover:text-fg">
+        {e.summary}
+      </Link>
     ),
   }));
-  const telemetry: LogEntry[] = [...sourceEvents, ...appEvents]
-    .sort((a, b) => b.ts - a.ts)
-    .slice(0, 8)
-    .map(({ time, text, colorToken }) => ({ time, text, colorToken }));
 
   return (
     <div className="space-y-4">

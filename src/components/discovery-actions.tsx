@@ -17,9 +17,7 @@ export function RefreshInboxButton() {
         <span className="text-xs text-muted">
           {summary.error
             ? summary.error
-            : `+${summary.upserted} upserted from ${summary.perSource.length} source${
-                summary.perSource.length === 1 ? '' : 's'
-              }`}
+            : `${summary.fetched} fetched · ${summary.new} new · ${summary.updated} updated`}
         </span>
       ) : null}
       <Button

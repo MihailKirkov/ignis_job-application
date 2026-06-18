@@ -1,6 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { runFetchers, toJobRows } from '@/lib/discovery/ingest';
+import { diffJobs, keyOf, runFetchers, summarizeRun, toJobRows } from '@/lib/discovery/ingest';
+import type { NormalizedJob } from '@/lib/sources/types';
 import type { SourceType } from '@/types/database';
+
+function job(source: string, externalId: string): NormalizedJob {
+  return {
+    source,
+    external_id: externalId,
+    title: 'Engineer',
+    company: 'Acme',
+    location: 'NL',
+    mode: null,
+    salary_min: null,
+    salary_max: null,
+    currency: null,
+    url: null,
+    description: null,
+    posted_at: null,
+    raw: {},
+  };
+}
 
 function source(type: SourceType, config: Record<string, unknown> = {}) {
   return { id: `src-${type}`, type, config };
@@ -75,5 +94,50 @@ describe('toJobRows', () => {
     expect(rows[0]).toHaveProperty('fuzzy_key');
     expect(rows[0]).not.toHaveProperty('state');
     expect(rows[0]).not.toHaveProperty('ingested_at');
+  });
+});
+
+describe('diffJobs', () => {
+  it('counts new vs already-present rows by natural key', () => {
+    const jobs = [job('lever', '1'), job('lever', '2'), job('adzuna', '9')];
+    const existing = new Set([keyOf('lever', '1')]);
+    expect(diffJobs(jobs, existing)).toEqual({ new: 2, updated: 1 });
+  });
+
+  it('treats an empty inbox as all-new', () => {
+    const jobs = [job('lever', '1'), job('lever', '2')];
+    expect(diffJobs(jobs, new Set())).toEqual({ new: 2, updated: 0 });
+  });
+
+  it('distinguishes the same external_id across sources', () => {
+    const jobs = [job('lever', '1'), job('adzuna', '1')];
+    const existing = new Set([keyOf('lever', '1')]);
+    expect(diffJobs(jobs, existing)).toEqual({ new: 1, updated: 1 });
+  });
+});
+
+describe('summarizeRun', () => {
+  const src = (
+    status: 'ok' | 'error' | 'skipped',
+    fetched: number,
+    nw: number,
+    updated: number,
+  ) => ({ status, fetched, new: nw, updated });
+
+  it('rolls per-source counts up to a run total', () => {
+    const out = summarizeRun([src('ok', 200, 10, 190), src('ok', 57, 8, 49)]);
+    expect(out).toEqual({ status: 'ok', sourcesRun: 2, fetched: 257, new: 18, updated: 239 });
+  });
+
+  it('is "partial" when some sources errored', () => {
+    expect(summarizeRun([src('ok', 10, 10, 0), src('error', 0, 0, 0)]).status).toBe('partial');
+  });
+
+  it('is "error" when every source errored', () => {
+    expect(summarizeRun([src('error', 0, 0, 0), src('error', 0, 0, 0)]).status).toBe('error');
+  });
+
+  it('is "ok" when a source ran clean but found nothing', () => {
+    expect(summarizeRun([src('ok', 0, 0, 0)]).status).toBe('ok');
   });
 });

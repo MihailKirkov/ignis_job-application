@@ -27,20 +27,32 @@ owner for now) — every row is scoped by `user_id` and enforced with RLS.
 supabase/migrations/0001_init.sql   # full schema + RLS + updated_at triggers
 supabase/migrations/0002_profiles.sql # profiles table + RLS + private 'cvs' storage bucket
 supabase/migrations/0003_ai_scoring.sql # jobs fit_* columns + user_secrets (encrypted API key)
+supabase/migrations/0004_activity_ingestion.sql # activity_events + ingestion_runs + ingestion_run_sources (+ RLS)
 src/types/database.ts               # hand-written DB types (type aliases, not interfaces)
 src/lib/supabase/                   # the three clients + auth helpers
-src/lib/constants.ts                # enums (statuses, channels, modes, seniority, fit verdicts, source meta)
+src/lib/constants.ts                # enums (statuses, channels, modes, seniority, fit verdicts, source meta, activity vocab)
 src/lib/utils.ts                    # dates, salary/status formatting, cn()
 src/lib/profile.ts                  # pure profile/CV helpers (sanitize, parse, validate; unit-tested)
 src/lib/ai/                         # AI fit-scoring + CV prefill (pure prompt/parse/hash + server-only client)
-src/lib/actions/                    # 'use server' mutations (applications, profile, scoring, ai-key, …)
+src/lib/activity/                   # unified activity log: summary.ts/feed.ts (pure), log.ts + record-run.ts (DB glue)
+src/lib/actions/                    # 'use server' mutations (applications, profile, scoring, ai-key, …) — each logs one activity event
 src/lib/sources/                    # NormalizedJob shape + per-source fetchers
-src/lib/discovery/                  # normalize, dedupe, filters (pure + unit-tested)
-src/app/(app)/                      # protected surfaces: needs-action, tracker, discovery, sources, profile
+src/lib/discovery/                  # normalize, dedupe, filters, ingest (executeIngestion + new/updated diff) — pure + unit-tested
+src/app/(app)/                      # protected surfaces: needs-action, tracker, discovery, sources, activity, profile
 src/app/auth/                       # callback / confirm / signout routes
 src/app/api/                        # import + cron + export route handlers
-tests/                              # vitest: normalize, dedupe, filters, profile, ai-* (+ sources)
+tests/                              # vitest: normalize, dedupe, filters, profile, ai-*, activity-summary, ingest diff/summarizer (+ sources)
 ```
+
+Activity + ingestion logs: every mutating Server Action emits exactly one
+`activity_events` row via `logActivity` (the single emission point) — a
+denormalized `summary` string is stored for trivial rendering, built by the pure
+`buildActivitySummary(type, meta)`. The TELEMETRY strip (/needs-action) and the
+full `/activity` feed read this table. Ingestion runs (manual-all, per-source,
+cron) additionally write structured `ingestion_runs` + `ingestion_run_sources`
+rows and emit one `ingestion.completed` event; counts distinguish **fetched vs
+new vs updated** (`persistJobs` diffs existing keys before the upsert — never
+label fetched as upserted). Secrets are REDACTED from stored run messages.
 
 Profile + CV: `profiles` is one row per user (PK `user_id`). CV text lands in
 `cv_text` two ways — pasted, or extracted from a PDF uploaded to the private
