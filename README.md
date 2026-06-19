@@ -1,295 +1,73 @@
 # Job Command Center
 
-> Ingest jobs, score the fit with AI, and run your whole application pipeline in
-> one modern, dense inbox.
+A personal job-discovery and application tracker that ingests roles from a dozen sources every morning, scores each one against your profile with AI, and ranks your inbox best-fit-first — so the only thing left to do is apply.
 
-A personal **job-discovery inbox + application tracker** — a "command-center"
-tool (not a marketing page) for finding roles and running your pipeline. It pulls
-roles from legitimate APIs and public ATS boards, ranks each one against your
-profile and CV with Claude, and tracks every application from *to apply* to
-*offer*. Built multi-user from day one: every row is scoped by `user_id` and
-enforced with Postgres Row-Level Security.
+**[Live demo (no signup)](https://ignis-job-application.vercel.app/demo)** · **[App](https://ignis-job-application.vercel.app/)** · **[Source](https://github.com/MihailKirkov/ignis_job-application)**
 
-**Stack:** Next.js 16 (App Router, TypeScript strict, Turbopack) · React 19 ·
-Tailwind v4 · Supabase (Postgres + Auth + RLS) · `@supabase/ssr` ·
-Anthropic Claude (Haiku 4.5) · Vercel (+ Cron) · Vitest. Free tiers only.
+![Command bridge](docs/screenshots/needs-action.png)
 
-**▶ Live demo** — `/demo` is a no-auth, read-only tour with sample data (set
-`NEXT_PUBLIC_SITE_URL` and link your Vercel domain here). The public landing page
-lives at `/`.
+## Why I built it
 
-## Screenshots & demo
+I built this because I was about to use it. I was job-hunting across the Netherlands with a hard deadline, and the actual bottleneck wasn't applying — it was the hours lost *finding* roles worth applying to: opening the same boards every day, re-reading listings, guessing which ones fit. So I automated that part.
 
-The fastest way to see it is the **read-only `/demo`** (Discovery, Tracker, and
-the Needs-action queue, populated and AI-scored — no sign-up). ASCII layouts of
-every screen live in [`docs/wireframes.md`](docs/wireframes.md).
+Now it runs itself: every morning it pulls fresh roles from the sources I care about, an AI scores each one against my CV and target profile, and I open a ranked inbox of the best matches instead of a search bar. My friends are using it for their own searches. It's not a demo project — it's a tool that genuinely saves time, which is the only reason it exists.
 
-<details>
-<summary>Embed PNGs</summary>
+## What it does
 
-Capture the three views from `/demo` and drop them in `docs/screenshots/`, then:
+- **Automated daily ingestion.** A scheduled job runs every morning and pulls new roles from every source you've configured — no manual searching. Re-runs are idempotent, so you never see the same job twice.
+- **Personalized AI fit-scoring.** Each job is scored 0–100 against your profile and CV — with a verdict (strong / medium / weak), the skills that matched, the gaps, and a one-line rationale. Your inbox is sorted best-fit-first, so the filtering is done for you.
+- **Multi-source, no scraping.** Pulls from public job APIs (Adzuna, Arbeitnow, Remotive, RemoteOK) and public ATS company boards (Greenhouse, Lever, Ashby, Workable, Recruitee, SmartRecruiters) — official endpoints only, no ToS-violating scraping. Anything without an API can be imported on demand.
+- **Discovery → pipeline in one click.** Save, dismiss, or promote a discovered job; promoting creates a pre-filled application linked back to the posting.
+- **Application tracker.** A drag-and-drop pipeline board (with optimistic updates) and a dense console view, with fit scores, stage stats, search, and JSON export.
+- **A "command bridge" homepage.** Pipeline vitals, response rate, a deadline countdown, priority follow-ups due today, and a live activity feed.
+- **Full activity + ingestion logs.** Every status change, promotion, and ingestion run is recorded and browsable, with per-source fetched/new/updated breakdowns.
 
-```md
-![Discovery — fit-scored inbox](docs/screenshots/discovery.png)
-![Tracker — pipeline](docs/screenshots/tracker.png)
-![Needs action — the hero queue](docs/screenshots/needs-action.png)
-```
+![Tracker board](docs/screenshots/tracker.png)
+![Discovery inbox](docs/screenshots/discovery.png)
 
-</details>
+## How it works
 
-## Architecture
+The app has two surfaces — a discovery inbox and an application tracker — on top of Supabase (Postgres + Auth + Row-Level Security).
 
-Next.js 16 App Router on Vercel, Supabase for Postgres + Auth + RLS. The root
-`proxy.ts` (Next 16's renamed middleware) refreshes the `@supabase/ssr` session
-and gates protected routes; the public landing, `/demo`, `/login`, and `/legal`
-stay open. Each **source fetcher** (`src/lib/sources/`) reduces a provider's
-payload to one `NormalizedJob` shape behind an injectable `fetchImpl`, so the
-**pure discovery core** — normalize, dedupe, filter (`src/lib/discovery/`) — is
-unit-tested with no network. Ingestion (manual button or `CRON_SECRET`-guarded
-Vercel Cron) dedupes by `(source, external_id)` plus a fuzzy
-company+title+location key. **AI fit-scoring** (`src/lib/ai/`) splits a pure,
-tested core (prompt builder, zod parser, profile hash) from server-only glue
-(the Claude SDK client, AES-256-GCM key encryption); each user brings their own
-encrypted Anthropic key. Writes are Server Actions; everything renders in dark
-command-center tokens defined in Tailwind v4's `@theme`.
+The deterministic core — normalizing each source into one shape, deduping, filtering, building and parsing the AI scoring prompts — is a set of **pure functions** kept free of React and the database. Every source fetcher and the model client take an injectable implementation, so the whole brain is unit-tested with canned data and **no network or DB**. Stateful work goes through Supabase: **Server Components** read, **Server Actions** (UI) and **Route Handlers** (APIs, cron) write, and a root proxy refreshes the session and gates protected routes.
 
----
-
-## Features
-
-- **Public landing + read-only demo** — a real landing page at `/`, and a
-  no-auth `/demo` that renders the actual Discovery / Tracker / Needs-action
-  components against bundled sample data (no DB, no real user data).
-- **AI fit-scoring (Claude)** — score any job against your profile + CV for a
-  0–100 fit, a verdict (strong / medium / weak), a one-line summary, and matched
-  skills vs. gaps. Best-fit floats to the top; scores re-stale when your profile
-  changes. Each user supplies their **own** Anthropic key (encrypted at rest).
-- **Profile & CV** — one profile per user; CV text pasted or extracted from an
-  uploaded PDF (`unpdf`, no native binaries) in a private per-user Storage
-  bucket. Powers both filtering and AI scoring.
-- **Discovery ingestion** from Adzuna (official), Arbeitnow, Remotive, RemoteOK,
-  and public ATS company boards (Greenhouse, Lever, Ashby, Workable, Recruitee,
-  SmartRecruiters). Everything normalized into one shape; raw payload kept as
-  `jsonb`; deduped by `(source, external_id)` and a fuzzy
-  company+title+location key.
-- **Needs-action queue:** items due/overdue (and not Rejected/Closed), overdue
-  flagged, one-click clear — plus a **first-run onboarding checklist** that
-  guides a new account from empty to a scored inbox.
-- Applications CRUD scoped per user: company, role, location, mode, channel,
-  status pipeline, salary, link, contact, dates, next-action, notes, optional
-  link back to a discovered job. Pipeline stat counts, status + search filters,
-  JSON export.
-- Per-job state (new / saved / dismissed / promoted). **Promote** creates a
-  pre-filled application linked back via `job_id`.
-- **Saveable filter presets:** keyword include/exclude, location scope
-  (Eindhoven+radius / NL / remote), min salary, seniority guess, work mode,
-  posted-within-N-days, source, language, min fit score.
-- **Auth:** cross-device token_hash magic links by default (Google OAuth
-  optional) via `@supabase/ssr`; session refresh + route protection in the root
-  `proxy.ts`.
-- **Scheduled ingestion** via Vercel Cron (idempotent, `CRON_SECRET`-guarded),
-  and **manual/Cowork import** (`POST /api/import`, session-protected, RLS-scoped).
-
----
-
-## Project layout
+Security is RLS-first: every table is owner-scoped (`auth.uid() = user_id`), so the browser key can only ever touch your own rows. The one exception is the scheduled cron, which has no session and uses a service-role client server-side only.
 
 ```
-supabase/migrations/                0001 schema+RLS · 0002 profiles+CV bucket · 0003 AI scoring
-src/types/database.ts               hand-written DB types
-src/lib/supabase/                   browser / server / proxy / admin clients + auth
-src/lib/sources/                    NormalizedJob shape + 10 source fetchers + registry
-src/lib/discovery/                  normalize · dedupe · filters · ingest · import-schema (pure, tested)
-src/lib/ai/                         AI fit-scoring + CV prefill: pure core + server-only glue
-src/lib/demo/                       bundled fixtures for the read-only /demo
-src/lib/actions/                    server actions: applications · jobs · sources · filters · profile · scoring
-src/app/                            landing (/) · demo · login · legal
-src/app/(app)/                      protected surfaces: needs-action · tracker · discovery · sources · profile
-src/app/auth/                       callback · confirm · signout
-src/app/api/                        import · cron/ingest · applications/export
-tests/                              vitest suites (normalize · dedupe · filters · profile · ai · sources)
-docs/                               setup · testing · database · code-structure · wireframes · cowork-import
+src/
+  app/            App Router — pages (Server Components), route handlers, auth
+  components/     server-safe primitives + client widgets (the HUD design system)
+  lib/
+    sources/      one fetcher per provider → a shared NormalizedJob shape
+    discovery/    pure brain: normalize, dedupe, filter, ingest, import
+    ai/           scoring prompt builder + parser (pure, tested)
+    actions/      Server Actions — the write path
+    supabase/     four clients, chosen by context
+supabase/migrations/   schema + RLS + triggers (source of truth)
+tests/                 Vitest unit tests for the pure logic
 ```
 
-## Documentation
+## Notable engineering decisions
 
-- [`docs/setup.md`](docs/setup.md) — full setup: API keys, env, Supabase, Vercel + Cron.
-- [`docs/testing.md`](docs/testing.md) — manual walkthrough + the `tests/` suite.
-- [`docs/database.md`](docs/database.md) — ER diagram, tables, RLS, relationships.
-- [`docs/code-structure.md`](docs/code-structure.md) — what lives where and why.
-- [`docs/wireframes.md`](docs/wireframes.md) — planned design of each page (ASCII layouts).
-- [`docs/cowork-import.md`](docs/cowork-import.md) — the Cowork on-demand import recipe.
+- **Public APIs over scrapers.** Scraping LinkedIn/Indeed violates their terms, gets accounts banned, and breaks constantly. Building on official aggregator APIs and public ATS endpoints is more reliable *and* the right call — the limitation is deliberate.
+- **Cost-aware AI.** Scoring runs on a per-user API key, batches multiple jobs per request, and uses prompt caching on the static profile prefix, so re-scoring a full inbox doesn't re-bill the profile context every time. Large runs are async and tracked in the DB, with live progress — the UI never blocks.
+- **A testable seam everywhere it matters.** Fetchers and the model client accept an injected `fetch`/call implementation, which is what lets the source layer and the scorer be unit-tested deterministically without hitting any external service.
+- **One log, two shapes.** A generic `activity_events` feed for human-meaningful events (applied, promoted, status changed) and structured `ingestion_runs` tables for operational metrics — bridged so the activity feed stays unified while the per-source data stays queryable.
 
----
+## Tech stack
 
-## 1. Supabase setup
+Next.js (App Router) · TypeScript · Tailwind · Supabase (Postgres / Auth / RLS) · `@supabase/ssr` · Anthropic API · Vitest · deployed on Vercel with Vercel Cron.
 
-1. Create a project at [supabase.com](https://supabase.com) (free tier).
-2. **Run the migration.** Either paste `supabase/migrations/0001_init.sql` into
-   the dashboard SQL editor and run it, or with the CLI:
-   ```bash
-   supabase link --project-ref <ref>
-   supabase db push     # applies supabase/migrations/*
-   ```
-   This creates `jobs`, `applications`, `sources`, `saved_filters`, enables RLS
-   on all four, adds owner-only policies (`auth.uid() = user_id`), and the
-   `updated_at` triggers.
-3. **Auth → Providers:** keep **Email** enabled (magic link works out of the box).
-   For Google sign-in, enable the **Google** provider and add your OAuth client.
-4. **Auth → URL Configuration:** set the **Site URL** (e.g. your Vercel domain)
-   and add redirect URLs:
-   `http://localhost:3000/auth/callback` and
-   `https://<your-app>.vercel.app/auth/callback`.
-5. **API keys** (Project Settings → API): copy the **Project URL**, the
-   **publishable/anon** key, and the **service-role** key (server-only).
-
-### Recommended: cross-device magic links (token_hash)
-
-The default the app is built around. Set **Auth → Email Templates → Magic Link**
-to:
-
-```
-{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=magiclink&next=/needs-action
-```
-
-The `/auth/confirm` route is already implemented — links then work across
-browsers/devices. Leaving the template on Supabase's default `{{ .ConfirmationURL }}`
-also works, via the PKCE `code` flow through `/auth/callback`, but those links
-must be opened in the same browser. Google OAuth always uses the `code` flow.
-
----
-
-## 2. Environment
-
-Copy `.env.example` → `.env.local` and fill in:
-
-| var                              | required | notes                                                  |
-| -------------------------------- | -------- | ------------------------------------------------------ |
-| `NEXT_PUBLIC_SUPABASE_URL`       | yes      | project URL                                            |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY`  | yes      | publishable/anon key (browser-safe; RLS protects data) |
-| `SUPABASE_SERVICE_ROLE_KEY`      | cron     | **server-only**, bypasses RLS — only the cron needs it |
-| `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | Adzuna | free from [developer.adzuna.com](https://developer.adzuna.com) |
-| `CRON_SECRET`                    | cron     | long random string; guards `/api/cron/ingest`          |
-| `NEXT_PUBLIC_SITE_URL`           | no       | base URL for redirects (defaults to localhost)         |
-
-ATS public board tokens are **not** secrets — you add them per-source in the app
-(Sources → Add source), stored in the `sources` table.
-
----
-
-## 3. Local development
+## Running locally
 
 ```bash
 npm install
-npm run dev          # http://localhost:3000
+cp .env.example .env.local   # Supabase keys, Adzuna key, CRON_SECRET, Anthropic key
+npm run dev
 ```
 
-Quality gate (all must be green before a phase is "done"):
+Full setup (Supabase project, migrations, auth config, deploy + cron) is in [`docs/setup.md`](docs/setup.md). Architecture, the testing approach, and the database design are documented in [`docs/`](docs/).
 
 ```bash
-npm run typecheck    # tsc --noEmit
-npm run lint         # eslint
-npm test             # vitest (139 tests: normalize, dedupe, filters, profile, ai, sources, ingest, import)
-npm run build        # next build
+npm run typecheck && npm run lint && npm test && npm run build
 ```
-
-First run: sign in with a magic link, go to **Sources**, add Adzuna (and any ATS
-boards), then **Refresh inbox**.
-
----
-
-## 4. Deploy to Vercel + Cron
-
-1. Push the repo to GitHub and import it in Vercel.
-2. **Project → Settings → Environment Variables:** add everything from
-   `.env.local` **including** `SUPABASE_SERVICE_ROLE_KEY` and `CRON_SECRET`.
-   Set `NEXT_PUBLIC_SITE_URL` to your production domain.
-3. Add the production `/auth/callback` redirect URL in Supabase (step 1.4).
-4. Deploy. `vercel.json` registers the cron:
-   ```json
-   { "crons": [{ "path": "/api/cron/ingest", "schedule": "0 6 * * *" }] }
-   ```
-   When `CRON_SECRET` is set, Vercel attaches `Authorization: Bearer $CRON_SECRET`
-   to each invocation; the route rejects anything else. Trigger it manually with:
-   ```bash
-   curl -H "Authorization: Bearer $CRON_SECRET" https://<your-app>.vercel.app/api/cron/ingest
-   ```
-   Free-tier note: keep page/source counts modest so a run finishes within the
-   function time limit (`maxDuration = 60`).
-
----
-
-## 5. Adding a new source / company board
-
-**A target company on an existing ATS** — no code, just config (Sources → Add):
-
-| ATS        | config                                    | where to find the token            |
-| ---------- | ----------------------------------------- | ---------------------------------- |
-| Greenhouse | `{ "token": "stripe", "name": "Stripe" }` | `boards.greenhouse.io/<token>`     |
-| Lever      | `{ "token": "netflix", "name": "Netflix" }` | `jobs.lever.co/<token>`          |
-| Ashby      | `{ "token": "ramp", "name": "Ramp" }`     | `jobs.ashbyhq.com/<token>`         |
-| Workable   | `{ "token": "acme", "name": "Acme" }`     | `apply.workable.com/<token>`       |
-| Recruitee  | `{ "token": "acme", "name": "Acme" }`     | `<token>.recruitee.com`            |
-| SmartRecruiters | `{ "token": "bosch", "name": "Bosch" }` | `jobs.smartrecruiters.com/<token>` |
-| Adzuna     | `{ "query": "react", "where": "Eindhoven", "country": "nl", "salary_min": 50000, "max_days_old": 14, "full_time": true }` | use `"country": "gb"` for a remote/UK query |
-
-**A brand-new provider** — add a fetcher:
-
-1. Create `src/lib/sources/<name>.ts` exporting
-   `async (config, ctx) => NormalizedJob[]` (take `ctx.fetchImpl` so it's
-   testable). **Web-search the current endpoint + terms first** — training data
-   may be stale.
-2. Register it in `src/lib/sources/index.ts` and add the type to
-   `SourceType` (`src/types/database.ts`) + `SOURCE_TYPES` / `SOURCE_META`
-   (`src/lib/constants.ts`).
-3. Add a test in `tests/sources/normalizers.test.ts` with a mocked fetch.
-4. `npm test && npm run typecheck && npm run lint && npm run build`.
-
----
-
-## Sources & boundaries
-
-Legitimate APIs, public ATS endpoints, and **Cowork on-demand** only
-(`docs/cowork-import.md`). **No headless scrapers** that bypass auth, anti-bot,
-rate limits, or CAPTCHAs; **no LinkedIn/Indeed scraping.** Attribution-required
-feeds (Remotive, RemoteOK) keep the original `url` + source label.
-
-### Terms verified at build time (June 2026)
-
-| source     | endpoint                                                       | terms                                                |
-| ---------- | ------------------------------------------------------------- | ---------------------------------------------------- |
-| Adzuna     | `api.adzuna.com/v1/api/jobs/{country}/search/{page}`          | Official API, free tier, rate-limited (429 backoff). |
-| Arbeitnow  | `www.arbeitnow.com/api/job-board-api`                         | Free public API, no key.                             |
-| Remotive   | `remotive.com/api/remote-jobs`                                | Attribution + link-back required; 24h delay; ≤2/min. |
-| RemoteOK   | `remoteok.com/api`                                            | Must link back to RemoteOK as source; skip notice.   |
-| Greenhouse | `boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true`| Public job-board API.                                |
-| Lever      | `api.lever.co/v0/postings/{token}?mode=json`                  | Public postings API.                                 |
-| Ashby      | `api.ashbyhq.com/posting-api/job-board/{token}`               | Public posting API.                                  |
-| Recruitee  | `{token}.recruitee.com/api/offers/`                          | Public Careers Site API, no key.                     |
-| SmartRecruiters | `api.smartrecruiters.com/v1/companies/{token}/postings` | Public Posting API, no key.                          |
-
-### Could not fully verify
-
-- **Workable** — the public surface is fragmented; this build targets the widget
-  endpoint `apply.workable.com/api/v1/widget/accounts/{token}`. It works for many
-  accounts but field names vary and it isn't a stable documented contract. Treat
-  it as best-effort and adjust `src/lib/sources/workable.ts` if a given account
-  returns a different shape.
-
-### Evaluated but not integrated
-
-- **Homerun** (NL ATS) was requested, but it exposes **no public, no-auth
-  job-board endpoint**: its public API (`api.homerun.co/v2`) requires a Bearer API
-  key (a real secret), and the only unauthenticated option is an undocumented XML
-  feed. Both break this project's source rules (public endpoints only; ATS tokens
-  are public board slugs, not secrets), so **SmartRecruiters** — verified public,
-  no-auth, and widely used by NL/EU employers — was added in its place.
-
----
-
-## Notes
-
-- Next 16 specifics: the old `middleware.ts` is now **`proxy.ts`**; `cookies()`
-  and `params`/`searchParams` are async. See `CLAUDE.md`.
-- DB types are hand-written (`src/types/database.ts`); regenerate with
-  `supabase gen types typescript` if you prefer.
