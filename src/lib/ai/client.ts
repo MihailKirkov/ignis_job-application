@@ -13,7 +13,11 @@ export function anthropicCall(apiKey: string): ModelCall {
     const message = await client.messages.create({
       model: req.model,
       max_tokens: req.max_tokens,
-      system: req.system,
+      // Mark the stable system prefix for prompt caching when asked — reused
+      // across the chunks of a batch run (no-op below the model's min prefix).
+      system: req.cacheSystem
+        ? [{ type: 'text', text: req.system, cache_control: { type: 'ephemeral' } }]
+        : req.system,
       messages: req.messages,
     });
     return message.content

@@ -195,7 +195,7 @@ export function CommandBridge({
           chamfer={['tl']}
           right={<span className="font-mono text-[11px] text-faint">LIVE</span>}
         >
-          <LogFeed entries={telemetry} empty="— no ingestion runs or status changes yet" />
+          <LogFeed entries={telemetry} empty="— no ingestion runs or status changes yet" className="max-h-[200px] overflow-scroll" />
         </HudFrame>
       </div>
     </div>

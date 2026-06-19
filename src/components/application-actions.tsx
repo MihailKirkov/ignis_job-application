@@ -1,6 +1,6 @@
 'use client';
 
-import { useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { clearNextAction, deleteApplication } from '@/lib/actions/applications';
 import { Button } from './ui';
@@ -28,20 +28,24 @@ export function DeleteApplicationButton({ id }: { id: string }) {
 
 export function ClearActionButton({ id }: { id: string }) {
   const [pending, start] = useTransition();
+  // Optimistic: flip to a settled "✓ Cleared" the instant it's clicked (no
+  // spinner-then-jump). The row leaves the queue when the refresh lands.
+  const [cleared, setCleared] = useState(false);
   const router = useRouter();
   return (
     <Button
       variant="primary"
       size="sm"
-      disabled={pending}
+      disabled={pending || cleared}
       onClick={() =>
         start(async () => {
+          setCleared(true);
           await clearNextAction(id);
           router.refresh();
         })
       }
     >
-      {pending ? 'Clearing…' : '✓ Clear'}
+      {cleared ? '✓ Cleared' : '✓ Clear'}
     </Button>
   );
 }

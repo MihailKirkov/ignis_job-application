@@ -34,9 +34,10 @@ export default async function TrackerPage({
     (r) => !isTerminal(r.status as ApplicationStatus),
   ).length;
 
-  // Filtered + sorted list.
+  // Filtered + sorted list. The status filter only applies in console view —
+  // the board needs every lane populated for cross-column dragging.
   let query = supabase.from('applications').select('*');
-  if (status) query = query.eq('status', status as ApplicationStatus);
+  if (status && activeView === 'console') query = query.eq('status', status as ApplicationStatus);
   const cleaned = q ? sanitize(q) : '';
   if (cleaned) {
     query = query.or(
@@ -89,7 +90,7 @@ export default async function TrackerPage({
 
       <TrackerStats counts={counts} active={active} />
 
-      <TrackerToolbar />
+      <TrackerToolbar view={activeView} />
 
       {applications.length === 0 ? (
         <EmptyState

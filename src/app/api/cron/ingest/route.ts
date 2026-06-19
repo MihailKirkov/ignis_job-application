@@ -3,15 +3,22 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { serverFetchContext } from '@/lib/sources';
 import { executeIngestion } from '@/lib/discovery/ingest';
 import { recordIngestionRun } from '@/lib/activity/record-run';
+import { runScoringToCompletion } from '@/lib/ai/scoring-run';
+import { SCORING_CRON_CAP } from '@/lib/constants';
 import type { SourceRow } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
+// Stop starting new scoring work this many ms into the run, leaving a buffer
+// under maxDuration. Leftover unscored jobs roll into the next cron run.
+const SCORING_DEADLINE_MS = 50_000;
+
 // Scheduled ingestion. Vercel Cron calls this daily (see vercel.json) and, when
 // CRON_SECRET is set, includes `Authorization: Bearer <CRON_SECRET>`. Idempotent:
 // the (user_id, source, external_id) upsert preserves each job's user state.
 export async function GET(request: NextRequest) {
+  const startedMs = Date.now();
   const secret = process.env.CRON_SECRET;
   const auth = request.headers.get('authorization');
   if (!secret || auth !== `Bearer ${secret}`) {
@@ -47,6 +54,7 @@ export async function GET(request: NextRequest) {
     totalFetched: number;
     totalNew: number;
     totalUpdated: number;
+    totalScored: number;
     perUser: {
       userId: string;
       runId: string | null;
@@ -55,8 +63,9 @@ export async function GET(request: NextRequest) {
       updated: number;
       sources: number;
       status: string;
+      scored?: number;
     }[];
-  } = { users: byUser.size, totalFetched: 0, totalNew: 0, totalUpdated: 0, perUser: [] };
+  } = { users: byUser.size, totalFetched: 0, totalNew: 0, totalUpdated: 0, totalScored: 0, perUser: [] };
 
   for (const [userId, sources] of byUser) {
     const startedAt = new Date().toISOString();
@@ -92,6 +101,26 @@ export async function GET(request: NextRequest) {
       sources: sources.length,
       status: outcome.status,
     });
+  }
+
+  // Auto-score: after ingestion, score each user's newly-ingested / still-unscored
+  // jobs server-side in bounded chunks (one batched + cached call per chunk), so
+  // the inbox is mostly pre-scored and the manual path rarely has a backlog. Hard
+  // deadline keeps the whole phase under the function budget. No key → skipped.
+  const scoringDeadline = startedMs + SCORING_DEADLINE_MS;
+  for (const entry of summary.perUser) {
+    if (Date.now() > scoringDeadline) break;
+    const run = await runScoringToCompletion(
+      admin,
+      entry.userId,
+      'cron',
+      SCORING_CRON_CAP,
+      scoringDeadline,
+    );
+    if (run) {
+      entry.scored = run.completed;
+      summary.totalScored += run.completed;
+    }
   }
 
   return NextResponse.json({ ok: true, ...summary });

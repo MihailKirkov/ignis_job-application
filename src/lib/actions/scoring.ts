@@ -6,61 +6,33 @@ import { requireUser } from '@/lib/supabase/auth';
 import { resolveAnthropicKey } from '@/lib/ai/resolve-key';
 import { anthropicCall } from '@/lib/ai/client';
 import { scoredProfileHash } from '@/lib/ai/hash';
-import { jobToScoring, profileToScoring, runPrefill, runScore } from '@/lib/ai/score';
-import type { ModelCall, CvPrefill } from '@/lib/ai/types';
+import {
+  fitColumns,
+  jobToScoring,
+  profileToScoring,
+  runPrefill,
+  runScore,
+} from '@/lib/ai/score';
+import {
+  NO_KEY_MESSAGE,
+  createScoringRun,
+  scoringErrorMessage,
+} from '@/lib/ai/scoring-run';
+import { SCORING_MANUAL_CAP } from '@/lib/constants';
+import type { CvPrefill, JobFitColumns } from '@/lib/ai/types';
 import type { JobRow, ProfileRow } from '@/types/database';
 
 export type ScoreActionResult = { ok: boolean; error?: string };
-export type BatchScoreSummary = {
-  ok: boolean;
-  scored: number;
-  failed: number;
-  skipped: number;
-  error?: string;
-};
+// The fit columns written after a score — returned to the client so a single
+// card's badge can update in place without a full refetch.
+export type JobFitUpdate = JobFitColumns;
+export type ScoreOneResult =
+  | { ok: true; skipped?: boolean; fit?: JobFitUpdate }
+  | { ok: false; error: string };
 export type PrefillResult = { ok: boolean; data?: CvPrefill; error?: string };
-
-const BATCH_CAP = 50; // hard per-run cap for cost control
-const CONCURRENCY = 3; // bounded parallelism
-const NEW_FETCH_LIMIT = 200; // candidate window before filtering to unscored/stale
-
-const NO_KEY_MESSAGE =
-  'No Anthropic API key available. Add your own key in Profile → AI to enable scoring.';
-
-function errorMessage(err: unknown): string {
-  const status = (err as { status?: number })?.status;
-  if (status === 401) return 'Invalid Anthropic API key.';
-  if (status === 429) return 'Anthropic rate limit hit — try again shortly.';
-  if (err instanceof Error) return err.message;
-  return 'Scoring failed.';
-}
-
-// Run `worker` over `items` with at most `limit` in flight at once.
-async function runPool<T>(
-  items: T[],
-  limit: number,
-  worker: (item: T) => Promise<void>,
-): Promise<void> {
-  let next = 0;
-  async function lane(): Promise<void> {
-    while (next < items.length) {
-      const i = next++;
-      await worker(items[i]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane));
-}
-
-function buildUpdate(result: Awaited<ReturnType<typeof runScore>>, hash: string) {
-  return {
-    fit_score: result.score,
-    fit_verdict: result.verdict,
-    fit_summary: result.summary,
-    fit_breakdown: { matched_skills: result.matched_skills, gaps: result.gaps },
-    scored_at: new Date().toISOString(),
-    scored_profile_hash: hash,
-  };
-}
+export type StartScoringResult =
+  | { ok: true; total: number; runId?: string }
+  | { ok: false; error: string };
 
 // Score a single discovered job against the user's profile.
 export async function scoreJob(
@@ -85,80 +57,86 @@ export async function scoreJob(
     return { ok: true }; // already scored for the current profile
   }
 
-  const call: ModelCall = anthropicCall(key);
   let result;
   try {
-    result = await runScore(call, profileToScoring(profile as ProfileRow), jobToScoring(row));
+    result = await runScore(anthropicCall(key), profileToScoring(profile as ProfileRow), jobToScoring(row));
   } catch (err) {
-    return { ok: false, error: errorMessage(err) };
+    return { ok: false, error: scoringErrorMessage(err) };
   }
 
-  const { error } = await supabase.from('jobs').update(buildUpdate(result, hash)).eq('id', jobId);
+  const { error } = await supabase.from('jobs').update(fitColumns(result, hash)).eq('id', jobId);
   if (error) return { ok: false, error: error.message };
 
   revalidatePath('/discovery');
   return { ok: true };
 }
 
-// Batch-score the user's unscored (or stale) New jobs, bounded + capped.
-export async function scoreNewJobs(): Promise<BatchScoreSummary> {
+// Score one job and RETURN its fit fields, so the client (DiscoveryList) can
+// update that card's badge incrementally (per-card "Rescore").
+export async function scoreOneJob(
+  jobId: string,
+  opts?: { force?: boolean },
+): Promise<ScoreOneResult> {
   const user = await requireUser();
   const supabase = await createClient();
 
   const { data: profile } = await supabase.from('profiles').select('*').maybeSingle();
-  if (!profile) {
-    return { ok: false, scored: 0, failed: 0, skipped: 0, error: 'Set up your profile first.' };
-  }
+  if (!profile) return { ok: false, error: 'Set up your profile first (Profile).' };
 
   const key = await resolveAnthropicKey(supabase, user.id);
-  if (!key) return { ok: false, scored: 0, failed: 0, skipped: 0, error: NO_KEY_MESSAGE };
+  if (!key) return { ok: false, error: NO_KEY_MESSAGE };
+
+  const { data: job } = await supabase.from('jobs').select('*').eq('id', jobId).maybeSingle();
+  if (!job) return { ok: false, error: 'Job not found.' };
 
   const hash = scoredProfileHash(profileToScoring(profile as ProfileRow));
-
-  const { data: jobRows, error: fetchErr } = await supabase
-    .from('jobs')
-    .select('*')
-    .eq('state', 'new')
-    .order('posted_at', { ascending: false, nullsFirst: false })
-    .order('ingested_at', { ascending: false })
-    .limit(NEW_FETCH_LIMIT);
-  if (fetchErr) {
-    return { ok: false, scored: 0, failed: 0, skipped: 0, error: fetchErr.message };
+  const row = job as JobRow;
+  if (!opts?.force && row.fit_score != null && row.scored_profile_hash === hash) {
+    return { ok: true, skipped: true };
   }
 
-  const candidates = (jobRows ?? []) as JobRow[];
-  // Skip jobs already scored for the current profile hash (unless none yet).
-  const needScoring = candidates.filter(
-    (j) => j.fit_score == null || j.scored_profile_hash !== hash,
-  );
-  const targets = needScoring.slice(0, BATCH_CAP);
+  let result;
+  try {
+    result = await runScore(
+      anthropicCall(key),
+      profileToScoring(profile as ProfileRow),
+      jobToScoring(row),
+    );
+  } catch (err) {
+    return { ok: false, error: scoringErrorMessage(err) };
+  }
 
-  const call: ModelCall = anthropicCall(key);
-  const scoringProfile = profileToScoring(profile as ProfileRow);
-  let scored = 0;
-  let failed = 0;
+  const fit = fitColumns(result, hash);
+  const { error } = await supabase.from('jobs').update(fit).eq('id', jobId);
+  if (error) return { ok: false, error: error.message };
 
-  await runPool(targets, CONCURRENCY, async (job) => {
-    try {
-      const result = await runScore(call, scoringProfile, jobToScoring(job));
-      const { error } = await supabase
-        .from('jobs')
-        .update(buildUpdate(result, hash))
-        .eq('id', job.id);
-      if (error) failed += 1;
-      else scored += 1;
-    } catch {
-      failed += 1;
-    }
-  });
+  revalidatePath('/needs-action');
+  revalidatePath('/tracker');
+  return { ok: true, fit };
+}
 
-  revalidatePath('/discovery');
-  return {
-    ok: true,
-    scored,
-    failed,
-    skipped: candidates.length - targets.length,
-  };
+// Kick off an async scoring run over the unscored-for-current-profile New jobs
+// (capped). Returns the run id immediately — the client drives /api/scoring/chunk
+// to completion, so the UI is never blocked on the whole batch. total: 0 means
+// there's nothing to score.
+export async function startScoring(): Promise<StartScoringResult> {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const res = await createScoringRun(supabase, user.id, 'manual', SCORING_MANUAL_CAP);
+  if (!res.ok) return { ok: false, error: res.error };
+  return { ok: true, total: res.total, runId: res.runId };
+}
+
+// Cancel a run — stops the client loop (the chunk endpoint sees the status and
+// bails). Already-scored jobs persist.
+export async function cancelScoring(runId: string): Promise<void> {
+  await requireUser();
+  const supabase = await createClient();
+  await supabase
+    .from('scoring_runs')
+    .update({ status: 'cancelled', finished_at: new Date().toISOString() })
+    .eq('id', runId)
+    .eq('status', 'running');
 }
 
 // Extract structured fields from the user's CV text for the profile form to
@@ -180,6 +158,6 @@ export async function prefillFromCv(): Promise<PrefillResult> {
     const data = await runPrefill(anthropicCall(key), cv);
     return { ok: true, data };
   } catch (err) {
-    return { ok: false, error: errorMessage(err) };
+    return { ok: false, error: scoringErrorMessage(err) };
   }
 }

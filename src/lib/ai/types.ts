@@ -13,6 +13,10 @@ export type ModelRequest = {
   max_tokens: number;
   system: string;
   messages: ChatMessage[];
+  // When true, the client marks the `system` block with `cache_control: ephemeral`
+  // so a stable prefix (system instructions + profile/CV) is reused across the
+  // chunks of a batch-scoring run. A no-op below the model's min cacheable prefix.
+  cacheSystem?: boolean;
 };
 
 // The injectable model-call seam — mirrors how source fetchers inject `fetchImpl`.
@@ -47,6 +51,9 @@ export type ScoringJob = {
   description?: string | null;
 };
 
+// A job in a batch carries its DB id so results can be mapped back by job_id.
+export type BatchScoringJob = ScoringJob & { id: string };
+
 // The validated, coerced fit-score result.
 export type ScoreResult = {
   score: number; // integer 0..100
@@ -54,6 +61,34 @@ export type ScoreResult = {
   matched_skills: string[];
   gaps: string[];
   summary: string;
+};
+
+// The `jobs` columns written after a score — built from a ScoreResult so the
+// per-job action, the batch chunk processor, and the cron all write the same
+// shape.
+export type JobFitColumns = {
+  fit_score: number;
+  fit_verdict: ScoreVerdict;
+  fit_summary: string;
+  fit_breakdown: { matched_skills: string[]; gaps: string[] };
+  scored_at: string;
+  scored_profile_hash: string;
+};
+
+// One job's fit columns plus its id — returned by a chunk so the client can fill
+// the badge in place. Pure wire shape (no DB/SDK), safe to import into the client.
+export type ScoredJobUpdate = { id: string } & JobFitColumns;
+
+// The result of processing one chunk of a scoring run.
+export type ScoringChunkResult = {
+  ok: boolean;
+  done: boolean;
+  completed: number;
+  failed: number;
+  total: number;
+  remaining: number;
+  updated: ScoredJobUpdate[];
+  error?: string;
 };
 
 // Structured fields extracted from a CV to pre-fill the profile form.

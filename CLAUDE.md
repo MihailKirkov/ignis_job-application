@@ -28,6 +28,7 @@ supabase/migrations/0001_init.sql   # full schema + RLS + updated_at triggers
 supabase/migrations/0002_profiles.sql # profiles table + RLS + private 'cvs' storage bucket
 supabase/migrations/0003_ai_scoring.sql # jobs fit_* columns + user_secrets (encrypted API key)
 supabase/migrations/0004_activity_ingestion.sql # activity_events + ingestion_runs + ingestion_run_sources (+ RLS)
+supabase/migrations/0005_scoring_runs.sql # scoring_runs (async fit-scoring runs) + owner RLS
 src/types/database.ts               # hand-written DB types (type aliases, not interfaces)
 src/lib/supabase/                   # the three clients + auth helpers
 src/lib/constants.ts                # enums (statuses, channels, modes, seniority, fit verdicts, source meta, activity vocab)
@@ -39,10 +40,32 @@ src/lib/actions/                    # 'use server' mutations (applications, prof
 src/lib/sources/                    # NormalizedJob shape + per-source fetchers
 src/lib/discovery/                  # normalize, dedupe, filters, ingest (executeIngestion + new/updated diff) — pure + unit-tested
 src/app/(app)/                      # protected surfaces: needs-action, tracker, discovery, sources, activity, profile
+                                    #   each segment has loading.tsx (HUD skeleton) + error.tsx (HudError boundary)
 src/app/auth/                       # callback / confirm / signout routes
 src/app/api/                        # import + cron + export route handlers
-tests/                              # vitest: normalize, dedupe, filters, profile, ai-*, activity-summary, ingest diff/summarizer (+ sources)
+src/app/api/scoring/chunk/          # processes ONE chunk of a scoring run (batched + cached call)
+tests/                              # vitest: normalize, dedupe, filters, profile, ai-* (incl. ai-batch), activity-summary, ingest diff/summarizer (+ sources)
 ```
+
+Perceived performance: route segments stream — the shell paints immediately,
+slow data (the discovery job list, the activity feed) is wrapped in `<Suspense>`
+with a HUD skeleton, and each segment has a `loading.tsx` (route skeleton) +
+`error.tsx` (the shared `HudError` boundary, retry-able). Skeleton primitives
+live in `components/hud-skeleton.tsx` (the `hud-skeleton` shimmer in
+`globals.css` is disabled under `prefers-reduced-motion`). Mutations are
+optimistic via `useOptimistic`/`useTransition` (source toggle, job state,
+clear-action). The **tracker board** (`tracker-board.tsx`, client) is a
+**@dnd-kit** kanban: lanes are droppables (id = status), `board-card.tsx` cards
+are draggables (grip handle carries pointer/touch/keyboard listeners). A
+cross-column drop optimistically moves the card and calls `setStatus` (rolls
+back on error); Rejected/Closed are compact archive drop zones so the full
+lifecycle is drag-reachable. `DragOverlay` previews the card; reduced-motion
+kills the drop animation. Status filter applies in console view only (the board
+needs every lane populated). The discovery inbox is **DB-paginated** (`actions/discovery.ts`
+`loadJobsPage`, range/limit) with IntersectionObserver infinite scroll, and the
+`DiscoveryList` client component owns the list state so AI scoring streams **per
+job** (`actions/scoring.ts` `scoreOneJob` returns the fit fields; the client
+runs them with bounded concurrency and updates each badge as it returns).
 
 Activity + ingestion logs: every mutating Server Action emits exactly one
 `activity_events` row via `logActivity` (the single emission point) — a
@@ -70,6 +93,24 @@ SDK wrapper, `crypto.ts` aes-256-gcm, `resolve-key.ts`). Each user stores their
 a message, never a crash. `jobs.scored_profile_hash` makes scores re-stale when
 the profile changes. **Keep `src/lib/ai` server-only modules out of the test
 import graph** — `server-only` throws under vitest.
+
+Batched + cached + async scoring (the inbox can hold hundreds of jobs):
+`buildBatchScorePrompt` scores up to `BATCH_SCORE_CAP` (8) jobs in ONE request,
+with the system prompt + profile/CV in a `cache_control: ephemeral` prefix reused
+across a run's chunks (Haiku min cacheable prefix is 4096 tokens — a no-op below
+that). `parseBatchScoreResponse` (zod) maps results back by `job_id` and tolerates
+missing/extra/duplicate entries — it never throws, so one bad chunk can't sink the
+batch. Runs are DB-tracked + resumable in `scoring_runs` (status
+queued/running/done/error/cancelled; total/completed/failed): `startScoring`
+creates a 'running' run (cap `SCORING_MANUAL_CAP`=100) and returns the id without
+blocking; the Discovery client drives `/api/scoring/chunk` until `remaining=0`,
+filling each card's badge from the chunk's `updated` and showing "scored X / N"
+(with Cancel, and Resume offered on load for an unfinished run). The daily cron
+also auto-scores newly-ingested jobs (`trigger='cron'`, cap `SCORING_CRON_CAP`,
+wall-clock-bounded). Pure batch logic lives in `prompt.ts`/`parse.ts`/`score.ts`/
+`progress.ts` (unit-tested via the `ModelCall` seam); the DB+SDK glue is
+server-only `scoring-run.ts` (`createScoringRun`/`processChunk`/
+`runScoringToCompletion`).
 
 ## Working rules (for future changes)
 

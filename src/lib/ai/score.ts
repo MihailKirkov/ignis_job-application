@@ -3,10 +3,12 @@
 // `fetchImpl`, so these are unit-tested with canned model output and no network.
 
 import type { JobRow, ProfileRow } from '@/types/database';
-import { buildPrefillPrompt, buildScorePrompt } from './prompt';
-import { parsePrefillResponse, parseScoreResponse } from './parse';
+import { buildBatchScorePrompt, buildPrefillPrompt, buildScorePrompt } from './prompt';
+import { parseBatchScoreResponse, parsePrefillResponse, parseScoreResponse } from './parse';
 import type {
+  BatchScoringJob,
   CvPrefill,
+  JobFitColumns,
   ModelCall,
   ScoreResult,
   ScoringJob,
@@ -42,12 +44,42 @@ export function jobToScoring(j: JobRow): ScoringJob {
   };
 }
 
+export function jobToBatchScoring(j: JobRow): BatchScoringJob {
+  return { id: j.id, ...jobToScoring(j) };
+}
+
+// Turn a parsed result into the `jobs` fit columns written to the DB. Shared by
+// the single-job action, the batch chunk processor, and the cron.
+export function fitColumns(result: ScoreResult, profileHash: string): JobFitColumns {
+  return {
+    fit_score: result.score,
+    fit_verdict: result.verdict,
+    fit_summary: result.summary,
+    fit_breakdown: { matched_skills: result.matched_skills, gaps: result.gaps },
+    scored_at: new Date().toISOString(),
+    scored_profile_hash: profileHash,
+  };
+}
+
 export async function runScore(
   call: ModelCall,
   profile: ScoringProfile,
   job: ScoringJob,
 ): Promise<ScoreResult> {
   return parseScoreResponse(await call(buildScorePrompt(profile, job)));
+}
+
+// Score a chunk of jobs in one cached request; returns a Map keyed by job id.
+// Missing ids (model dropped a job) are simply absent — the caller treats those
+// as failures so one bad entry never sinks the whole chunk.
+export async function runBatchScore(
+  call: ModelCall,
+  profile: ScoringProfile,
+  jobs: BatchScoringJob[],
+): Promise<Map<string, ScoreResult>> {
+  if (jobs.length === 0) return new Map();
+  const text = await call(buildBatchScorePrompt(profile, jobs));
+  return parseBatchScoreResponse(text, jobs.map((j) => j.id));
 }
 
 export async function runPrefill(call: ModelCall, cvText: string): Promise<CvPrefill> {

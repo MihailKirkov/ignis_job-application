@@ -64,6 +64,10 @@ export type IngestionTrigger = 'manual_all' | 'manual_source' | 'cron';
 export type RunStatus = 'ok' | 'partial' | 'error';
 export type RunSourceStatus = 'ok' | 'error' | 'skipped';
 
+// Async AI fit-scoring runs (see 0005_scoring_runs.sql).
+export type ScoringTrigger = 'manual' | 'cron';
+export type ScoringRunStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
+
 export type SourceType =
   | 'adzuna'
   | 'arbeitnow'
@@ -214,6 +218,20 @@ export type IngestionRunSourceRow = {
   created_at: string;
 };
 
+export type ScoringRunRow = {
+  id: string;
+  user_id: string;
+  trigger: ScoringTrigger;
+  status: ScoringRunStatus;
+  total: number;
+  completed: number;
+  failed: number;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+  created_at: string;
+};
+
 // user_secrets is one row per user; anthropic_api_key is stored ENCRYPTED.
 export type UserSecretRow = {
   user_id: string;
@@ -247,6 +265,7 @@ export type Database = {
       activity_events: TableShape<ActivityEventRow>;
       ingestion_runs: TableShape<IngestionRunRow>;
       ingestion_run_sources: TableShape<IngestionRunSourceRow>;
+      scoring_runs: TableShape<ScoringRunRow>;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

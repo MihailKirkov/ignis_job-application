@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useOptimistic, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { deleteSource, toggleSource, updateSource } from '@/lib/actions/sources';
 import { runSingleSource } from '@/lib/actions/jobs';
@@ -58,6 +58,9 @@ export function SourceCard({ source }: { source: SourceRow }) {
 
   const [run, setRun] = useState<IngestionSummary | null>(null);
   const [pending, start] = useTransition();
+  // Optimistic enabled state so the toggle flips instantly; reconciles on the
+  // server response (and reverts on failure when props re-sync).
+  const [optimisticEnabled, setOptimisticEnabled] = useOptimistic(source.enabled);
 
   const friendlyName = configName(source.config);
 
@@ -71,8 +74,10 @@ export function SourceCard({ source }: { source: SourceRow }) {
   }
 
   function doToggle() {
+    const next = !source.enabled;
     start(async () => {
-      await toggleSource(source.id, !source.enabled);
+      setOptimisticEnabled(next);
+      await toggleSource(source.id, next);
       router.refresh();
     });
   }
@@ -114,7 +119,7 @@ export function SourceCard({ source }: { source: SourceRow }) {
             {friendlyName ? (
               <span className="truncate font-mono text-xs text-system">{friendlyName}</span>
             ) : null}
-            {!source.enabled ? (
+            {!optimisticEnabled ? (
               <span className="border border-border px-1.5 py-0.5 text-[10px] text-faint">
                 disabled
               </span>
@@ -147,17 +152,17 @@ export function SourceCard({ source }: { source: SourceRow }) {
             <button
               type="button"
               role="switch"
-              aria-checked={source.enabled}
+              aria-checked={optimisticEnabled}
               disabled={pending}
               onClick={doToggle}
               className={`relative h-5 w-9 rounded-full transition-colors disabled:opacity-50 ${
-                source.enabled ? 'bg-accent' : 'border border-border bg-surface-2'
+                optimisticEnabled ? 'bg-accent' : 'border border-border bg-surface-2'
               }`}
-              aria-label={source.enabled ? 'Disable source' : 'Enable source'}
+              aria-label={optimisticEnabled ? 'Disable source' : 'Enable source'}
             >
               <span
                 className={`absolute top-0.5 h-4 w-4 rounded-full bg-bg transition-transform ${
-                  source.enabled ? 'translate-x-4' : 'translate-x-0.5'
+                  optimisticEnabled ? 'translate-x-0.6' : 'translate-x-[-0.9rem]'
                 }`}
               />
             </button>

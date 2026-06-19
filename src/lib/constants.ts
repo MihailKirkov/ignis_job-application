@@ -5,6 +5,8 @@ import type {
   Channel,
   JobState,
   ScoreVerdict,
+  ScoringRunStatus,
+  ScoringTrigger,
   Seniority,
   SourceType,
   WorkMode,
@@ -65,6 +67,21 @@ export const FIT_VERDICT_COLOR: Record<ScoreVerdict, string> = {
   medium: 'status-interview', // amber
   weak: 'status-rejected', // red
 };
+
+// AI scoring runs --------------------------------------------------------------
+
+export const SCORING_TRIGGERS: ScoringTrigger[] = ['manual', 'cron'];
+export const SCORING_RUN_STATUSES: ScoringRunStatus[] = [
+  'queued',
+  'running',
+  'done',
+  'error',
+  'cancelled',
+];
+
+// Cost guards: hard caps on how many jobs a single run will score.
+export const SCORING_MANUAL_CAP = 100; // per manual "Score new jobs" run
+export const SCORING_CRON_CAP = 60; // per daily cron run (bounded for time/cost)
 
 // Activity log -----------------------------------------------------------------
 

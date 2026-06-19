@@ -1,17 +1,47 @@
+'use client';
+
+import { useEffect, useState, useSyncExternalStore, useTransition } from 'react';
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  closestCorners,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
 import type { ApplicationRow, ApplicationStatus } from '@/types/database';
-import { statusColorToken } from '@/lib/utils';
-import { AppCard, type FitMap } from './app-card';
+import { setStatus } from '@/lib/actions/applications';
+import { APPLICATION_STATUSES } from '@/lib/constants';
+import { cn, statusColorToken } from '@/lib/utils';
+import { BoardCardView, DraggableBoardCard } from './board-card';
+import type { FitMap } from './app-card';
+import { LaneAddButton } from './application-dialog';
 import { HudFrame, SectionLabel, StatusLed } from './hud';
 
-// Active pipeline lanes (left → right). Rejected/Closed go to a collapsed archive.
-const ACTIVE_LANES: ApplicationStatus[] = [
-  'To apply',
-  'Applied',
-  'Screening',
-  'Interview',
-  'Offer',
-];
+// Active pipeline lanes (left → right). Rejected/Closed are compact archive
+// drop zones below — so the whole lifecycle is drag-reachable, not just the
+// active stages.
+const ACTIVE_LANES: ApplicationStatus[] = ['To apply', 'Applied', 'Screening', 'Interview', 'Offer'];
 const ARCHIVE_LANES: ApplicationStatus[] = ['Rejected', 'Closed'];
+
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+
+function usePrefersReducedMotion(): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      const mq = window.matchMedia(REDUCED_MOTION_QUERY);
+      mq.addEventListener('change', cb);
+      return () => mq.removeEventListener('change', cb);
+    },
+    () => window.matchMedia(REDUCED_MOTION_QUERY).matches,
+    () => false, // server snapshot — assume motion is allowed
+  );
+}
 
 function LaneCount({ count, token }: { count: number; token: string }) {
   return (
@@ -29,32 +59,51 @@ function Lane({
   rows,
   fitMap,
   readOnly,
+  compact = false,
 }: {
   status: ApplicationStatus;
   rows: ApplicationRow[];
   fitMap: FitMap;
   readOnly: boolean;
+  compact?: boolean;
 }) {
   const token = statusColorToken(status);
+  // The scrollable card list is the drop target — including its empty space, so
+  // an empty lane is still reachable.
+  const { setNodeRef, isOver } = useDroppable({ id: status, disabled: readOnly });
+
   return (
     <HudFrame
       label={status}
       accentTone={token}
       node
-      right={<LaneCount count={rows.length} token={token} />}
-      bodyClassName="p-2"
+      right={
+        <div className="flex items-center gap-2">
+          {readOnly ? null : <LaneAddButton status={status} />}
+          <LaneCount count={rows.length} token={token} />
+        </div>
+      }
+      bodyClassName="p-1.5"
     >
-      <div className="flex flex-col gap-2">
-        {rows.map((row) => (
-          <AppCard
-            key={row.id}
-            row={row}
-            fit={row.job_id ? fitMap[row.job_id] : undefined}
-            readOnly={readOnly}
-          />
-        ))}
+      <div
+        ref={setNodeRef}
+        className={cn(
+          'flex flex-col gap-2 overflow-y-auto overflow-x-hidden rounded-none p-1 transition-colors',
+          compact ? 'max-h-[34vh] min-h-[64px]' : 'max-h-[58vh] min-h-[88px]',
+          isOver && 'bg-[color-mix(in_srgb,var(--color-system)_10%,transparent)] ring-1 ring-system/40',
+        )}
+      >
+        {rows.map((row) =>
+          readOnly ? (
+            <BoardCardView key={row.id} row={row} fit={row.job_id ? fitMap[row.job_id] : undefined} readOnly />
+          ) : (
+            <DraggableBoardCard key={row.id} row={row} fit={row.job_id ? fitMap[row.job_id] : undefined} />
+          ),
+        )}
         {rows.length === 0 ? (
-          <p className="py-2 text-center font-mono text-[10px] text-faint">— empty</p>
+          <p className="py-3 text-center font-mono text-[10px] text-faint">
+            {readOnly ? '— empty' : isOver ? '▾ drop here' : '— empty'}
+          </p>
         ) : null}
       </div>
     </HudFrame>
@@ -70,52 +119,156 @@ export function TrackerBoard({
   fitMap: FitMap;
   readOnly?: boolean;
 }) {
-  const byStatus = (s: ApplicationStatus) => applications.filter((r) => r.status === s);
-  const archived = applications.filter((r) => ARCHIVE_LANES.includes(r.status));
+  // Optimistic overrides keyed by application id: the lane a card was *dropped*
+  // into, kept authoritative until the server confirms the move. Deriving the
+  // rendered list from `applications` + these overrides (rather than a full
+  // local copy) means a stale revalidation can't bounce a card back to its old
+  // lane mid-flight — the override stays until fresh data actually shows the
+  // move, at which point we drop it and the (identical) server value takes over.
+  const [pending, setPending] = useState<Record<string, ApplicationStatus>>({});
+  const [seenApplications, setSeenApplications] = useState(applications);
+  if (seenApplications !== applications) {
+    setSeenApplications(applications);
+    setPending((prev) => {
+      const ids = Object.keys(prev);
+      if (ids.length === 0) return prev;
+      let changed = false;
+      const next = { ...prev };
+      for (const row of applications) {
+        if (next[row.id] !== undefined && row.status === next[row.id]) {
+          delete next[row.id];
+          changed = true;
+        }
+      }
+      // Drop overrides for rows that no longer exist (e.g. deleted elsewhere).
+      const live = new Set(applications.map((r) => r.id));
+      for (const id of ids) {
+        if (!live.has(id) && next[id] !== undefined) {
+          delete next[id];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }
 
-  return (
-    <div className="space-y-3">
-      {/* Fit-to-width grid — wraps responsively, never a horizontal scrollbar. */}
+  const items =
+    Object.keys(pending).length === 0
+      ? applications
+      : applications.map((r) =>
+          pending[r.id] !== undefined ? { ...r, status: pending[r.id] } : r,
+        );
+
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [, startMove] = useTransition();
+  const reducedMotion = usePrefersReducedMotion();
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+    useSensor(KeyboardSensor),
+  );
+
+  function onDragStart(e: DragStartEvent) {
+    setActiveId(String(e.active.id));
+  }
+
+  function onDragEnd(e: DragEndEvent) {
+    setActiveId(null);
+    const { active, over } = e;
+    if (!over) return;
+    const id = String(active.id);
+    const from = active.data.current?.status as ApplicationStatus | undefined;
+    const to = over.id as ApplicationStatus;
+    // Cross-column moves only; ignore same-lane drops and unknown targets.
+    if (!from || from === to || !APPLICATION_STATUSES.includes(to)) return;
+
+    // Move the card immediately — the override is authoritative until resolved.
+    setPending((p) => ({ ...p, [id]: to }));
+    // setStatus emits the status_changed activity event + revalidates. On success
+    // we leave the override; reconciliation clears it once fresh data shows the
+    // move (no flicker). On error, drop the override (reverts) and toast.
+    startMove(async () => {
+      try {
+        await setStatus(id, to);
+      } catch {
+        setPending((p) => {
+          const next = { ...p };
+          delete next[id];
+          return next;
+        });
+        setToast(`Couldn't move to ${to}. Reverted.`);
+      }
+    });
+  }
+
+  const byStatus = (s: ApplicationStatus) => items.filter((r) => r.status === s);
+  const activeRow = activeId ? items.find((r) => r.id === activeId) ?? null : null;
+
+  const board = (
+    <div className="space-y-4">
+      {/* Active lanes — fit-to-width grid; wraps responsively, never a page-level
+          horizontal scrollbar. On mobile it stacks to a single column. */}
       <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {ACTIVE_LANES.map((status) => (
-          <Lane
-            key={status}
-            status={status}
-            rows={byStatus(status)}
-            fitMap={fitMap}
-            readOnly={readOnly}
-          />
+          <Lane key={status} status={status} rows={byStatus(status)} fitMap={fitMap} readOnly={readOnly} />
         ))}
       </div>
 
-      {/* Rejected / Closed — collapsed archive. */}
-      <details className="group border border-system/25 bg-surface">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3.5 py-2.5">
-          <span className="flex items-center gap-2">
-            <StatusLed colorToken="status-grey" size={7} />
-            <SectionLabel>ARCHIVE · REJECTED / CLOSED</SectionLabel>
-            <span className="font-mono text-xs text-faint group-open:hidden">▸</span>
-            <span className="hidden font-mono text-xs text-faint group-open:inline">▾</span>
-          </span>
-          <span className="font-mono text-sm font-semibold tabular-nums text-muted">
-            {archived.length}
-          </span>
-        </summary>
-        {archived.length > 0 ? (
-          <div className="grid gap-2 px-3.5 pb-3.5 sm:grid-cols-2 lg:grid-cols-3">
-            {archived.map((row) => (
-              <AppCard
-                key={row.id}
-                row={row}
-                fit={row.job_id ? fitMap[row.job_id] : undefined}
-                readOnly={readOnly}
-              />
-            ))}
-          </div>
-        ) : (
-          <p className="px-3.5 pb-3.5 font-mono text-[10px] text-faint">— archive empty</p>
-        )}
-      </details>
+      {/* Archive — Rejected / Closed as compact, always-visible drop zones. */}
+      <div className="space-y-2">
+        <SectionLabel className="flex items-center gap-2 text-faint">
+          <StatusLed colorToken="status-grey" size={7} />
+          ARCHIVE · REJECTED / CLOSED
+        </SectionLabel>
+        <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
+          {ARCHIVE_LANES.map((status) => (
+            <Lane key={status} status={status} rows={byStatus(status)} fitMap={fitMap} readOnly={readOnly} compact />
+          ))}
+        </div>
+      </div>
     </div>
+  );
+
+  // DndContext always wraps (so the lane droppables have a provider even in the
+  // read-only demo); drag is inert when read-only (no sensors, no overlay).
+  return (
+    <DndContext
+      sensors={readOnly ? undefined : sensors}
+      collisionDetection={closestCorners}
+      onDragStart={readOnly ? undefined : onDragStart}
+      onDragEnd={readOnly ? undefined : onDragEnd}
+      onDragCancel={() => setActiveId(null)}
+    >
+      {board}
+      {readOnly ? null : (
+        <DragOverlay dropAnimation={reducedMotion ? null : undefined}>
+          {activeRow ? (
+            <BoardCardView
+              row={activeRow}
+              fit={activeRow.job_id ? fitMap[activeRow.job_id] : undefined}
+              overlay
+            />
+          ) : null}
+        </DragOverlay>
+      )}
+      {toast ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-4 right-4 z-50 max-w-xs border border-status-rejected/50 bg-surface-2 px-3 py-2 font-mono text-[11px] text-status-rejected shadow-lg"
+          style={{ boxShadow: '0 0 14px color-mix(in srgb, var(--color-status-rejected) 25%, transparent)' }}
+        >
+          {toast}
+        </div>
+      ) : null}
+    </DndContext>
   );
 }

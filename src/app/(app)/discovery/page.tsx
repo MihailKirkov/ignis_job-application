@@ -1,20 +1,99 @@
+import { Suspense } from 'react';
 import { createClient } from '@/lib/supabase/server';
-import type { JobRow, JobState, ProfileRow, SavedFilterRow } from '@/types/database';
-import { criteriaFromParams, jobRowToNormalized } from '@/lib/discovery/filter-params';
-import { matchesFilter } from '@/lib/discovery/filters';
-import { isCriteriaEmpty } from '@/lib/discovery/filter-params';
+import type { JobState, ProfileRow, SavedFilterRow } from '@/types/database';
+import { criteriaFromParams, isCriteriaEmpty } from '@/lib/discovery/filter-params';
+import { loadJobsPage } from '@/lib/actions/discovery';
 import { hasAnthropicKey } from '@/lib/ai/resolve-key';
 import { scoredProfileHash } from '@/lib/ai/hash';
 import { profileToScoring } from '@/lib/ai/score';
-import { JobCard } from '@/components/job-card';
+import { DiscoveryList, type ResumableRun } from '@/components/discovery-list';
 import { DiscoveryTabs } from '@/components/discovery-tabs';
 import { FilterPanel } from '@/components/filter-panel';
 import { PresetBar } from '@/components/preset-bar';
 import { RefreshInboxButton, ImportPasteButton } from '@/components/discovery-actions';
-import { ScoreNewButton } from '@/components/score-new-button';
-import { EmptyState } from '@/components/ui';
+import { SkeletonJobList } from '@/components/hud-skeleton';
 
 const STATES: JobState[] = ['new', 'saved', 'dismissed', 'promoted'];
+
+// Reduce the raw search params to the flat string record the filter helpers +
+// loadJobsPage understand (drops `state`, arrays, and undefined).
+function filterParams(sp: Record<string, string | string[] | undefined>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(sp)) {
+    if (k !== 'state' && typeof v === 'string') out[k] = v;
+  }
+  return out;
+}
+
+// The genuinely slow section — first DB page of jobs + profile/AI metadata — is
+// streamed so the page frame (header, tabs, filters) paints immediately.
+async function DiscoveryFeed({
+  state,
+  params,
+  hasFilters,
+  emptyTitle,
+  emptyHint,
+}: {
+  state: JobState;
+  params: Record<string, string>;
+  hasFilters: boolean;
+  emptyTitle: string;
+  emptyHint: string;
+}) {
+  const supabase = await createClient();
+  const [page, { data: profileRow }, aiEnabled] = await Promise.all([
+    loadJobsPage({ state, params, offset: 0 }),
+    supabase.from('profiles').select('*').maybeSingle(),
+    hasAnthropicKey(supabase),
+  ]);
+
+  const profile = (profileRow ?? null) as ProfileRow | null;
+  const profileHash = profile ? scoredProfileHash(profileToScoring(profile)) : null;
+
+  // Offer to resume an in-progress run (e.g. the user navigated away mid-scan).
+  let resumableRun: ResumableRun | null = null;
+  if (aiEnabled) {
+    const { data: runRow } = await supabase
+      .from('scoring_runs')
+      .select('id, total, completed, failed')
+      .eq('status', 'running')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (runRow && runRow.total - runRow.completed - runRow.failed > 0) {
+      resumableRun = {
+        runId: runRow.id,
+        total: runRow.total,
+        completed: runRow.completed,
+        failed: runRow.failed,
+      };
+    }
+  }
+
+  return (
+    <>
+      {aiEnabled ? (
+        <p className="text-xs text-faint">
+          Fit scores run on your own Anthropic API key (set it in{' '}
+          <span className="text-muted">Profile → AI</span>).
+        </p>
+      ) : null}
+      <DiscoveryList
+        initialJobs={page.jobs}
+        state={state}
+        params={params}
+        aiEnabled={aiEnabled}
+        profileHash={profileHash}
+        initialDone={page.done}
+        initialOffset={page.nextOffset}
+        hasFilters={hasFilters}
+        emptyTitle={emptyTitle}
+        emptyHint={emptyHint}
+        resumableRun={resumableRun}
+      />
+    </>
+  );
+}
 
 export default async function DiscoveryPage({
   searchParams,
@@ -29,27 +108,16 @@ export default async function DiscoveryPage({
   const active: JobState = STATES.includes(stateParam as JobState)
     ? (stateParam as JobState)
     : 'new';
-  const criteria = criteriaFromParams({ get });
+  const params = filterParams(sp);
+  const hasFilters = !isCriteriaEmpty(criteriaFromParams({ get }));
 
   const supabase = await createClient();
 
-  const [
-    { data: stateRows },
-    { data: jobRows },
-    { data: presetRows },
-    { data: profileRow },
-    aiEnabled,
-  ] = await Promise.all([
+  // Lightweight shell metadata (tab counts + presets) — kept out of the streamed
+  // feed so tabs/filters render without waiting on the job list.
+  const [{ data: stateRows }, { data: presetRows }] = await Promise.all([
     supabase.from('jobs').select('state'),
-    supabase
-      .from('jobs')
-      .select('*')
-      .eq('state', active)
-      .order('posted_at', { ascending: false, nullsFirst: false })
-      .order('ingested_at', { ascending: false }),
     supabase.from('saved_filters').select('*').order('created_at', { ascending: true }),
-    supabase.from('profiles').select('*').maybeSingle(),
-    hasAnthropicKey(supabase),
   ]);
 
   const counts = (stateRows ?? []).reduce<Record<string, number>>((acc, r) => {
@@ -57,27 +125,24 @@ export default async function DiscoveryPage({
     return acc;
   }, {});
 
-  const profile = (profileRow ?? null) as ProfileRow | null;
-  const currentProfileHash = profile ? scoredProfileHash(profileToScoring(profile)) : null;
-
-  const allJobs = (jobRows ?? []) as JobRow[];
-  const hasFilters = !isCriteriaEmpty(criteria);
-  const filtered = hasFilters
-    ? allJobs.filter((j) => matchesFilter(jobRowToNormalized(j), criteria))
-    : allJobs;
-
-  // When scores exist, sort the New inbox best-fit first (stable; unscored last).
-  const hasScores = filtered.some((j) => j.fit_score != null);
-  const jobs =
-    active === 'new' && hasScores
-      ? [...filtered].sort((a, b) => (b.fit_score ?? -1) - (a.fit_score ?? -1))
-      : filtered;
-
   const presets = ((presetRows ?? []) as SavedFilterRow[]).map((p) => ({
     id: p.id,
     name: p.name,
     criteria: p.criteria as Record<string, string>,
   }));
+
+  const stateTotal = counts[active] ?? 0;
+  const filteredEmpty = stateTotal > 0 && hasFilters;
+  const emptyTitle = filteredEmpty
+    ? 'No jobs match these filters'
+    : active === 'new'
+      ? 'Inbox is empty'
+      : `No ${active} jobs`;
+  const emptyHint = filteredEmpty
+    ? 'Loosen or clear the filters to see more.'
+    : active === 'new'
+      ? 'Add sources, then “Refresh inbox” to ingest jobs — or paste-import from a Cowork recipe.'
+      : 'Jobs you act on will show up under the matching tab.';
 
   return (
     <div className="space-y-5">
@@ -87,59 +152,28 @@ export default async function DiscoveryPage({
           <p className="text-sm text-muted">Review, save, dismiss, or promote ingested jobs.</p>
         </div>
         <div className="flex items-center gap-2">
-          {aiEnabled ? <ScoreNewButton /> : null}
           <ImportPasteButton />
           <RefreshInboxButton />
         </div>
       </header>
-
-      {aiEnabled ? (
-        <p className="text-xs text-faint">
-          Fit scores run on your own Anthropic API key (set it in{' '}
-          <span className="text-muted">Profile → AI</span>).
-        </p>
-      ) : null}
 
       <DiscoveryTabs active={active} counts={counts} />
 
       <FilterPanel />
       <PresetBar presets={presets} />
 
-      {jobs.length === 0 ? (
-        <EmptyState
-          title={
-            allJobs.length > 0 && hasFilters
-              ? 'No jobs match these filters'
-              : active === 'new'
-                ? 'Inbox is empty'
-                : `No ${active} jobs`
-          }
-          hint={
-            allJobs.length > 0 && hasFilters
-              ? 'Loosen or clear the filters to see more.'
-              : active === 'new'
-                ? 'Add sources, then “Refresh inbox” to ingest jobs — or paste-import from a Cowork recipe.'
-                : 'Jobs you act on will show up under the matching tab.'
-          }
+      <Suspense
+        key={`${active}:${JSON.stringify(params)}`}
+        fallback={<SkeletonJobList rows={5} />}
+      >
+        <DiscoveryFeed
+          state={active}
+          params={params}
+          hasFilters={hasFilters}
+          emptyTitle={emptyTitle}
+          emptyHint={emptyHint}
         />
-      ) : (
-        <>
-          <p className="text-xs text-faint">
-            <span className="font-mono">{jobs.length}</span>
-            {hasFilters ? ` of ${allJobs.length}` : ''} job{jobs.length === 1 ? '' : 's'}
-          </p>
-          <div className="grid gap-3">
-            {jobs.map((job) => (
-              <JobCard
-                key={job.id}
-                job={job}
-                aiEnabled={aiEnabled}
-                currentProfileHash={currentProfileHash}
-              />
-            ))}
-          </div>
-        </>
-      )}
+      </Suspense>
     </div>
   );
 }

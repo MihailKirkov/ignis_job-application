@@ -6,8 +6,9 @@ import { APPLICATION_STATUSES } from '@/lib/constants';
 import { Input, Select } from './ui';
 
 // Status filter + free-text search, both reflected in the URL so the server
-// component can read them. Debounced search keeps typing snappy.
-export function TrackerToolbar() {
+// component can read them. Debounced search keeps typing snappy. The status
+// dropdown is hidden in board view (the columns already communicate status).
+export function TrackerToolbar({ view }: { view: 'board' | 'console' }) {
   const router = useRouter();
   const params = useSearchParams();
   const [q, setQ] = useState(params.get('q') ?? '');
@@ -35,19 +36,21 @@ export function TrackerToolbar() {
         onChange={(e) => onSearch(e.target.value)}
         className="h-9 w-full sm:w-64"
       />
-      <Select
-        value={params.get('status') ?? ''}
-        onChange={(e) => setParam('status', e.target.value)}
-        className="h-9 w-auto"
-        aria-label="Filter by status"
-      >
-        <option value="">All statuses</option>
-        {APPLICATION_STATUSES.map((s) => (
-          <option key={s} value={s}>
-            {s}
-          </option>
-        ))}
-      </Select>
+      {view === 'console' ? (
+        <Select
+          value={params.get('status') ?? ''}
+          onChange={(e) => setParam('status', e.target.value)}
+          className="h-9 w-auto"
+          aria-label="Filter by status"
+        >
+          <option value="">All statuses</option>
+          {APPLICATION_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </Select>
+      ) : null}
     </div>
   );
 }

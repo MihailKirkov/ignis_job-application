@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { ACTIVITY_CATEGORIES, ACTIVITY_CATEGORY_COLOR, ACTIVITY_CATEGORY_ICON } from '@/lib/constants';
@@ -11,6 +12,7 @@ import type {
 import { HudFrame } from '@/components/hud-frame';
 import { StatusLed } from '@/components/hud';
 import { EmptyState, Label } from '@/components/ui';
+import { Skeleton, SkeletonPanel } from '@/components/hud-skeleton';
 
 const PAGE_SIZE = 25;
 
@@ -21,14 +23,16 @@ type FeedEvent = Pick<
   'id' | 'type' | 'category' | 'summary' | 'meta' | 'created_at'
 >;
 
-export default async function ActivityPage({ searchParams }: { searchParams: SearchParams }) {
-  const sp = await searchParams;
-  const category = ACTIVITY_CATEGORIES.includes(sp.category as ActivityCategory)
-    ? (sp.category as ActivityCategory)
-    : undefined;
-  const from = sp.from?.trim() || undefined;
-  const to = sp.to?.trim() || undefined;
-  const page = Math.max(1, Number(sp.page) || 1);
+type FeedFilters = {
+  category?: ActivityCategory;
+  from?: string;
+  to?: string;
+  page: number;
+};
+
+// The event-log query (and its per-run breakdown prefetch) is the slow part, so
+// it streams in a Suspense boundary while the filter bar paints immediately.
+async function ActivityFeed({ category, from, to, page }: FeedFilters) {
   const offset = (page - 1) * PAGE_SIZE;
 
   const supabase = await createClient();
@@ -78,67 +82,6 @@ export default async function ActivityPage({ searchParams }: { searchParams: Sea
 
   return (
     <div className="space-y-4">
-      <header>
-        <h1 className="text-xl font-semibold text-fg">Activity</h1>
-        <p className="text-sm text-muted">Every action across the command center.</p>
-      </header>
-
-      {/* ---- Filters ---- */}
-      <HudFrame label="FILTER" chamfer={['tl', 'br']} bodyClassName="px-3.5 py-3">
-        <form method="get" className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[150px]">
-            <Label htmlFor="category">Category</Label>
-            <select
-              id="category"
-              name="category"
-              defaultValue={category ?? ''}
-              className="hud-field hud-select h-9 px-3 py-2 text-sm"
-            >
-              <option value="">All</option>
-              {ACTIVITY_CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <Label htmlFor="from">From</Label>
-            <input
-              id="from"
-              name="from"
-              type="date"
-              defaultValue={from ?? ''}
-              className="hud-field h-9 px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <Label htmlFor="to">To</Label>
-            <input
-              id="to"
-              name="to"
-              type="date"
-              defaultValue={to ?? ''}
-              className="hud-field h-9 px-3 py-2 text-sm"
-            />
-          </div>
-          <button
-            type="submit"
-            className="hud-cut h-9 bg-accent px-3.5 text-sm font-medium text-accent-fg hover:brightness-95"
-          >
-            Apply
-          </button>
-          {category || from || to ? (
-            <Link
-              href="/activity"
-              className="flex h-9 items-center px-2 text-sm text-muted hover:text-fg"
-            >
-              Clear
-            </Link>
-          ) : null}
-        </form>
-      </HudFrame>
-
       {/* ---- Feed ---- */}
       {events.length === 0 ? (
         <EmptyState
@@ -258,6 +201,102 @@ export default async function ActivityPage({ searchParams }: { searchParams: Sea
           )}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// HUD skeleton for the streamed event log.
+function FeedSkeleton() {
+  return (
+    <SkeletonPanel header bodyClassName="divide-y divide-border">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="flex items-start gap-3 py-2.5 first:pt-0">
+          <Skeleton className="mt-0.5 h-2 w-2 rounded-full" />
+          <div className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
+            <Skeleton className="h-3.5 w-2/3" />
+            <Skeleton className="h-3 w-28" />
+          </div>
+        </div>
+      ))}
+    </SkeletonPanel>
+  );
+}
+
+export default async function ActivityPage({ searchParams }: { searchParams: SearchParams }) {
+  const sp = await searchParams;
+  const category = ACTIVITY_CATEGORIES.includes(sp.category as ActivityCategory)
+    ? (sp.category as ActivityCategory)
+    : undefined;
+  const from = sp.from?.trim() || undefined;
+  const to = sp.to?.trim() || undefined;
+  const page = Math.max(1, Number(sp.page) || 1);
+
+  return (
+    <div className="space-y-4">
+      <header>
+        <h1 className="text-xl font-semibold text-fg">Activity</h1>
+        <p className="text-sm text-muted">Every action across the command center.</p>
+      </header>
+
+      {/* ---- Filters (instant — no data dependency) ---- */}
+      <HudFrame label="FILTER" chamfer={['tl', 'br']} bodyClassName="px-3.5 py-3">
+        <form method="get" className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[150px]">
+            <Label htmlFor="category">Category</Label>
+            <select
+              id="category"
+              name="category"
+              defaultValue={category ?? ''}
+              className="hud-field hud-select h-9 px-3 py-2 text-sm"
+            >
+              <option value="">All</option>
+              {ACTIVITY_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label htmlFor="from">From</Label>
+            <input
+              id="from"
+              name="from"
+              type="date"
+              defaultValue={from ?? ''}
+              className="hud-field h-9 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <Label htmlFor="to">To</Label>
+            <input
+              id="to"
+              name="to"
+              type="date"
+              defaultValue={to ?? ''}
+              className="hud-field h-9 px-3 py-2 text-sm"
+            />
+          </div>
+          <button
+            type="submit"
+            className="hud-cut h-9 bg-accent px-3.5 text-sm font-medium text-accent-fg hover:brightness-95"
+          >
+            Apply
+          </button>
+          {category || from || to ? (
+            <Link
+              href="/activity"
+              className="flex h-9 items-center px-2 text-sm text-muted hover:text-fg"
+            >
+              Clear
+            </Link>
+          ) : null}
+        </form>
+      </HudFrame>
+
+      <Suspense key={`${category ?? ''}:${from ?? ''}:${to ?? ''}:${page}`} fallback={<FeedSkeleton />}>
+        <ActivityFeed category={category} from={from} to={to} page={page} />
+      </Suspense>
     </div>
   );
 }

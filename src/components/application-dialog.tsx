@@ -12,7 +12,7 @@ import {
   CHANNELS,
   WORK_MODES,
 } from '@/lib/constants';
-import type { ApplicationRow } from '@/types/database';
+import type { ApplicationRow, ApplicationStatus } from '@/types/database';
 import { Modal } from './modal';
 import { Button, Input, Label, Select, Textarea } from './ui';
 
@@ -22,9 +22,11 @@ function Field({ children }: { children: React.ReactNode }) {
 
 function ApplicationForm({
   row,
+  presetStatus,
   onDone,
 }: {
   row?: ApplicationRow;
+  presetStatus?: ApplicationStatus;
   onDone: () => void;
 }) {
   const router = useRouter();
@@ -89,7 +91,7 @@ function ApplicationForm({
         </Field>
         <Field>
           <Label htmlFor="status">Status</Label>
-          <Select id="status" name="status" defaultValue={row?.status ?? 'To apply'}>
+          <Select id="status" name="status" defaultValue={row?.status ?? presetStatus ?? 'To apply'}>
             {APPLICATION_STATUSES.map((s) => (
               <option key={s} value={s}>
                 {s}
@@ -162,6 +164,27 @@ export function NewApplicationButton() {
       </Button>
       <Modal open={open} onClose={() => setOpen(false)} title="New application">
         <ApplicationForm onDone={() => setOpen(false)} />
+      </Modal>
+    </>
+  );
+}
+
+// Compact "+" in a board lane header — opens the form pre-set to that lane's status.
+export function LaneAddButton({ status }: { status: ApplicationStatus }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={`Add application to ${status}`}
+        title={`Add to ${status}`}
+        className="inline-flex h-5 w-5 items-center justify-center text-base leading-none text-faint transition-colors hover:text-system"
+      >
+        +
+      </button>
+      <Modal open={open} onClose={() => setOpen(false)} title={`New application · ${status}`}>
+        <ApplicationForm presetStatus={status} onDone={() => setOpen(false)} />
       </Modal>
     </>
   );

@@ -2,7 +2,11 @@
 // No SDK, no network. Kept deterministic (no timestamps/ids) so prompt caching
 // stays effective and the output is testable.
 
-import type { ModelRequest, ScoringJob, ScoringProfile } from './types';
+import type { BatchScoringJob, ModelRequest, ScoringJob, ScoringProfile } from './types';
+
+// Max jobs scored in a single batched request. Capped low so one call stays fast
+// and the JSON stays well-formed; also the chunk size for a scoring run.
+export const BATCH_SCORE_CAP = 8;
 
 // A fast, cheap model — we score many jobs. Verified current id (Claude Haiku
 // tier). Note: Haiku does not support the `effort` parameter, so we don't send it.
@@ -77,6 +81,57 @@ export function buildScorePrompt(profile: ScoringProfile, job: ScoringJob): Mode
       {
         role: 'user',
         content: `CANDIDATE PROFILE\n${renderProfile(profile)}\n\nJOB POSTING\n${renderJob(job)}`,
+      },
+    ],
+  };
+}
+
+// Batch variant: score up to BATCH_SCORE_CAP jobs in one request. The system
+// block carries the (stable) candidate profile so it can be PROMPT-CACHED across
+// the chunks of a run — the volatile job list goes in the user message, after
+// the cached prefix. The model returns ONE object per job, keyed by job_id.
+const BATCH_SCORE_SYSTEM = `You are a precise job-fit evaluator for a software job-seeker.
+For EACH job posting, compare it to the candidate profile and rate the fit.
+
+Score 0-100 where:
+- 80-100 = strong fit (core skills + seniority + location/mode align)
+- 50-79  = medium fit (partial overlap, some gaps)
+- 0-49   = weak fit (little overlap or clear mismatch)
+
+Score every job independently and be calibrated and concise. Base each score only
+on the given profile and that posting; do not invent facts. Reply with STRICT JSON
+only — no prose, no markdown fences — a JSON ARRAY with exactly one object per job,
+each echoing the job's id, matching this shape:
+[
+  {
+    "job_id": "<the id given for the job>",
+    "score": <integer 0-100>,
+    "verdict": "strong" | "medium" | "weak",
+    "matched_skills": [<strings: candidate skills the job wants>],
+    "gaps": [<strings: things the job wants the candidate appears to lack>],
+    "summary": "<one or two sentences explaining the score>"
+  }
+]`;
+
+export function buildBatchScorePrompt(
+  profile: ScoringProfile,
+  jobs: BatchScoringJob[],
+): ModelRequest {
+  const slice = jobs.slice(0, BATCH_SCORE_CAP);
+  const rendered = slice
+    .map((j) => `--- JOB job_id=${j.id} ---\n${renderJob(j)}`)
+    .join('\n\n');
+  return {
+    model: AI_MODEL,
+    // Room for one result object per job (matched_skills/gaps/summary) + overhead.
+    max_tokens: Math.min(8192, 512 + slice.length * 400),
+    // Stable instructions + profile → cacheable prefix reused across chunks.
+    system: `${BATCH_SCORE_SYSTEM}\n\nCANDIDATE PROFILE\n${renderProfile(profile)}`,
+    cacheSystem: true,
+    messages: [
+      {
+        role: 'user',
+        content: `JOBS TO SCORE (${slice.length}) — return one JSON object per job_id:\n\n${rendered}`,
       },
     ],
   };

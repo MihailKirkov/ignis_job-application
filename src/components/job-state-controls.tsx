@@ -6,35 +6,54 @@ import { promoteJob, setJobState } from '@/lib/actions/jobs';
 import type { JobState } from '@/types/database';
 import { Button } from './ui';
 
+// Controlled mode: the parent (DiscoveryList) owns the optimistic list state and
+// drives the mutation, so the card can disappear/move instantly. Uncontrolled
+// mode keeps the original self-contained behaviour (server action + refresh).
+export type JobStateControl = {
+  pending: boolean;
+  onSetState: (state: JobState) => void;
+  onPromote: () => void;
+};
+
 export function JobStateControls({
   id,
   state,
+  control,
 }: {
   id: string;
   state: JobState;
+  control?: JobStateControl;
 }) {
-  const [pending, start] = useTransition();
+  const [selfPending, start] = useTransition();
   const router = useRouter();
 
-  function act(fn: () => Promise<unknown>) {
+  const pending = control ? control.pending : selfPending;
+
+  const setState = (next: JobState) => {
+    if (control) {
+      control.onSetState(next);
+      return;
+    }
     start(async () => {
-      await fn();
+      await setJobState(id, next);
       router.refresh();
     });
-  }
+  };
 
-  async function onPromote() {
+  const onPromote = () => {
+    if (control) {
+      control.onPromote();
+      return;
+    }
     start(async () => {
       const res = await promoteJob(id);
       if (!res.ok) alert(res.error ?? 'Could not promote job.');
       router.refresh();
     });
-  }
+  };
 
   if (state === 'promoted') {
-    return (
-      <span className="text-xs text-status-offer">✓ Promoted to pipeline</span>
-    );
+    return <span className="text-xs text-status-offer">✓ Promoted to pipeline</span>;
   }
 
   return (
@@ -48,7 +67,7 @@ export function JobStateControls({
           variant="secondary"
           size="sm"
           disabled={pending}
-          onClick={() => act(() => setJobState(id, 'saved'))}
+          onClick={() => setState('saved')}
         >
           Save
         </Button>
@@ -59,7 +78,7 @@ export function JobStateControls({
           variant="ghost"
           size="sm"
           disabled={pending}
-          onClick={() => act(() => setJobState(id, 'dismissed'))}
+          onClick={() => setState('dismissed')}
         >
           Dismiss
         </Button>
@@ -68,7 +87,7 @@ export function JobStateControls({
           variant="ghost"
           size="sm"
           disabled={pending}
-          onClick={() => act(() => setJobState(id, 'new'))}
+          onClick={() => setState('new')}
         >
           Restore
         </Button>

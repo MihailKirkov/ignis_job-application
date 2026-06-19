@@ -255,6 +255,35 @@
   animation: hud-pulse 1.8s ease-in-out infinite;
 }
 
+/* ===========================================================================
+   Skeleton placeholders — a cyan-tinted block with a slow L→R sweep, used by
+   loading.tsx route skeletons + streaming Suspense fallbacks. Degrades to a
+   flat tinted block under prefers-reduced-motion (sweep killed below).
+   =========================================================================== */
+.hud-skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: color-mix(in srgb, var(--color-system) 7%, var(--color-surface-2));
+}
+.hud-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-system) 16%, transparent),
+    transparent
+  );
+  transform: translateX(-100%);
+  animation: hud-shimmer 1.5s ease-in-out infinite;
+}
+@keyframes hud-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 /* Respect reduced-motion: kill ALL animation. */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -266,6 +295,9 @@
     scroll-behavior: auto !important;
   }
   .hud-pulse {
+    animation: none !important;
+  }
+  .hud-skeleton::after {
     animation: none !important;
   }
 }

@@ -3,8 +3,8 @@ import { FIT_VERDICT_COLOR, SOURCE_META } from '@/lib/constants';
 import { formatDate, formatSalaryRange } from '@/lib/utils';
 import { RadialMeter, SectionLabel } from './hud';
 import { HudFrame } from './hud-frame';
-import { JobStateControls } from './job-state-controls';
-import { JobScoreButton } from './job-score';
+import { JobStateControls, type JobStateControl } from './job-state-controls';
+import { JobScoreButton, type JobScoreControl } from './job-score';
 
 // In read-only mode (the public /demo) we keep the full visual — fit dial, AI
 // summary, source — but drop every control that would hit a Server Action.
@@ -24,11 +24,16 @@ export function JobCard({
   aiEnabled = false,
   currentProfileHash = null,
   readOnly = false,
+  stateControl,
+  scoreControl,
 }: {
   job: JobRow;
   aiEnabled?: boolean;
   currentProfileHash?: string | null;
   readOnly?: boolean;
+  // Provided by DiscoveryList for optimistic state changes + incremental scoring.
+  stateControl?: JobStateControl;
+  scoreControl?: JobScoreControl;
 }) {
   const salary = formatSalaryRange(job.salary_min, job.salary_max, job.currency);
   const sourceLabel = SOURCE_META[job.source as keyof typeof SOURCE_META]?.label ?? job.source;
@@ -146,12 +151,14 @@ export function JobCard({
                 ? `posted ${formatDate(job.posted_at)}`
                 : `seen ${formatDate(job.ingested_at)}`}
             </span>
-            {aiEnabled && !readOnly ? <JobScoreButton jobId={job.id} scored={scored} /> : null}
+            {aiEnabled && !readOnly ? (
+              <JobScoreButton jobId={job.id} scored={scored} control={scoreControl} />
+            ) : null}
           </div>
           {readOnly ? (
             <DemoStatePill state={job.state} />
           ) : (
-            <JobStateControls id={job.id} state={job.state} />
+            <JobStateControls id={job.id} state={job.state} control={stateControl} />
           )}
         </div>
       </div>
