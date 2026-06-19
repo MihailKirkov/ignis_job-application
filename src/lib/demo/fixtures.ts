@@ -4,6 +4,7 @@
 // recruiter can see the app without signing up.
 
 import type {
+  ActivityCategory,
   ApplicationRow,
   JobRow,
   JobState,
@@ -266,14 +267,61 @@ export const DEMO_JOBS: JobRow[] = [
       ['Salary band', 'Amsterdam location'],
     ),
   }),
+  job({
+    id: 'demo-job-10',
+    source: 'lever',
+    title: 'Frontend Engineer (Vue)',
+    company: 'Mollie',
+    location: 'Remote — NL',
+    mode: 'Remote',
+    salary_min: 70000,
+    salary_max: 95000,
+    currency: 'EUR',
+    url: 'https://www.example.com/jobs/mollie-frontend',
+    description:
+      'Build the merchant dashboard for a leading EU payments provider. Vue 3, TypeScript, and a strong product-engineering culture; remote within the Netherlands.',
+    posted_at: '2026-06-05T00:00:00.000Z',
+    state: 'promoted',
+    ...scored(
+      81,
+      'strong',
+      'Remote-NL and top of your range with a strong product culture. Vue rather than React is the main ramp; promoted to the pipeline — now at offer stage.',
+      ['TypeScript', 'Remote', 'Payments'],
+      ['Vue (vs React)'],
+    ),
+  }),
+  job({
+    id: 'demo-job-11',
+    source: 'workable',
+    title: 'WordPress Developer',
+    company: 'A Local Agency',
+    location: 'Eindhoven',
+    mode: 'On-site',
+    salary_min: 38000,
+    salary_max: 50000,
+    currency: 'EUR',
+    url: 'https://www.example.com/jobs/agency-wordpress',
+    description:
+      'Maintain client WordPress sites and build PHP/jQuery themes for a regional marketing agency. On-site, with occasional design work.',
+    posted_at: '2026-06-04T00:00:00.000Z',
+    state: 'dismissed',
+    ...scored(
+      22,
+      'weak',
+      'Weak fit: a PHP/WordPress maintenance role well below your seniority and salary target, with no modern React/TypeScript work. Dismissed.',
+      [],
+      ['WordPress/PHP', 'Salary band', 'Below seniority'],
+    ),
+  }),
 ];
 
-// Per-tab counts for the Discovery view (mirrors what the real query computes).
+// Per-tab counts for the Discovery view — derived from the fixtures so every tab's
+// count matches the cards it actually shows (mirrors what the real query computes).
 export const DEMO_JOB_COUNTS: Record<JobState, number> = {
   new: DEMO_JOBS.filter((j) => j.state === 'new').length,
-  saved: 1,
-  dismissed: 4,
-  promoted: 6,
+  saved: DEMO_JOBS.filter((j) => j.state === 'saved').length,
+  dismissed: DEMO_JOBS.filter((j) => j.state === 'dismissed').length,
+  promoted: DEMO_JOBS.filter((j) => j.state === 'promoted').length,
 };
 
 // Recent ingestion runs — feeds the command-bridge telemetry log.
@@ -282,6 +330,55 @@ export const DEMO_SOURCES: { type: string; last_run_at: string }[] = [
   { type: 'greenhouse', last_run_at: '2026-06-12T07:10:00.000Z' },
   { type: 'remotive', last_run_at: '2026-06-11T22:05:00.000Z' },
   { type: 'lever', last_run_at: '2026-06-11T18:30:00.000Z' },
+];
+
+// Unified activity feed — mirrors `activity_events`, rendered by the same
+// TELEMETRY strip as the real Needs-action page (category → color, newest first).
+export const DEMO_ACTIVITY: {
+  category: ActivityCategory;
+  summary: string;
+  created_at: string;
+}[] = [
+  {
+    category: 'ingestion',
+    summary: 'Ingestion run · 4 sources — 14 fetched · 11 new · 3 updated',
+    created_at: '2026-06-12T07:40:00.000Z',
+  },
+  {
+    category: 'job',
+    summary: 'Scored 8 jobs against your profile',
+    created_at: '2026-06-12T07:06:00.000Z',
+  },
+  {
+    category: 'application',
+    summary: 'Philips · Full-stack Engineer → Screening',
+    created_at: '2026-06-12T06:30:00.000Z',
+  },
+  {
+    category: 'application',
+    summary: 'Bol.com · Senior Frontend Engineer → Interview',
+    created_at: '2026-06-11T17:00:00.000Z',
+  },
+  {
+    category: 'application',
+    summary: 'ASML · Senior Frontend Engineer → Interview',
+    created_at: '2026-06-11T15:20:00.000Z',
+  },
+  {
+    category: 'application',
+    summary: 'Mollie · Frontend Engineer → Offer',
+    created_at: '2026-06-11T11:45:00.000Z',
+  },
+  {
+    category: 'profile',
+    summary: 'Updated profile — skills & CV',
+    created_at: '2026-06-11T09:50:00.000Z',
+  },
+  {
+    category: 'source',
+    summary: 'Added source · Greenhouse — Adyen',
+    created_at: '2026-06-11T09:30:00.000Z',
+  },
 ];
 
 // --------------------------------------------------------------------------- applications

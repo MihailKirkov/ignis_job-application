@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { getUser } from '@/lib/supabase/auth';
 import { JobCard } from '@/components/job-card';
+import { HudFrame } from '@/components/hud-frame';
+import { StatusLed } from '@/components/hud';
 import { DEMO_JOBS } from '@/lib/demo/fixtures';
 
 const FEATURES = [
@@ -25,8 +27,11 @@ export default async function Home() {
 
   return (
     <div className="min-h-dvh bg-bg">
-      <header className="mx-auto flex max-w-5xl items-center justify-between px-4 py-5 md:px-8">
-        <div className="font-mono text-xs tracking-widest text-accent">JOB · CC</div>
+      <header className="mx-auto flex max-w-6xl items-center justify-between px-4 py-5 md:px-8">
+        <div className="flex items-center gap-2">
+          <StatusLed colorToken="system" alert size={9} />
+          <span className="font-mono text-[11px] tracking-[0.25em] text-system">JOB · CC</span>
+        </div>
         <nav className="flex items-center gap-2 text-sm">
           <Link href="/demo" className="px-3 py-1.5 text-muted transition-colors hover:text-fg">
             Demo
@@ -34,14 +39,14 @@ export default async function Home() {
           {user ? (
             <Link
               href="/needs-action"
-              className="inline-flex h-8 items-center rounded-md bg-accent px-3 font-medium text-accent-fg transition-[filter] hover:brightness-95"
+              className="hud-cut inline-flex h-8 items-center bg-accent px-3 font-medium text-accent-fg transition-[filter] hover:brightness-95"
             >
               Open app
             </Link>
           ) : (
             <Link
               href="/login"
-              className="inline-flex h-8 items-center rounded-md border border-border bg-surface-2 px-3 text-fg transition-colors hover:bg-surface-2/70"
+              className="inline-flex h-8 items-center border border-system/30 bg-surface-2 px-3 text-fg transition-colors hover:border-system/60 hover:text-system"
             >
               Sign in
             </Link>
@@ -50,16 +55,16 @@ export default async function Home() {
       </header>
 
       {/* Hero */}
-      <section className="mx-auto max-w-5xl px-4 pb-8 pt-10 md:px-8 md:pt-16">
+      <section className="mx-auto max-w-6xl px-4 pb-8 pt-10 md:px-8 md:pt-16">
         <div className="grid items-center gap-10 md:grid-cols-[1.05fr_0.95fr]">
           <div>
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted">
-              <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />
+            <div className="mb-4 inline-flex items-center gap-2 border border-system/30 bg-surface px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted">
+              <StatusLed colorToken="system" alert size={7} />
               A command center for your job hunt
             </div>
             <h1 className="text-3xl font-semibold leading-tight text-fg md:text-4xl">
               Ingest jobs, score the fit with AI, and run your whole pipeline in one
-              dark, dense inbox.
+              modern, dense inbox.
             </h1>
             <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted md:text-base">
               Job Command Center pulls roles from legitimate APIs and public ATS
@@ -69,53 +74,77 @@ export default async function Home() {
             <div className="mt-7 flex flex-wrap items-center gap-3">
               <Link
                 href="/demo"
-                className="inline-flex h-10 items-center rounded-md bg-accent px-5 text-sm font-medium text-accent-fg transition-[filter] hover:brightness-95"
+                className="hud-cut inline-flex h-10 items-center bg-accent px-5 text-sm font-medium text-accent-fg transition-[filter] hover:brightness-95"
               >
                 Try the demo →
               </Link>
               <Link
                 href={user ? '/needs-action' : '/login'}
-                className="inline-flex h-10 items-center rounded-md border border-border bg-surface-2 px-5 text-sm text-fg transition-colors hover:bg-surface-2/70"
+                className="inline-flex h-10 items-center border border-system/30 bg-surface-2 px-5 text-sm text-fg transition-colors hover:border-system/60 hover:text-system"
               >
                 {user ? 'Open app' : 'Sign in'}
               </Link>
             </div>
-            <p className="mt-3 text-xs text-faint">
+            <p className="mt-3 font-mono text-[11px] text-faint">
               No sign-up needed to explore the demo — it’s read-only sample data.
             </p>
           </div>
 
-          {/* Live preview, framed like an app window. */}
-          <div className="rounded-[12px] border border-border bg-surface p-2 shadow-2xl shadow-black/40">
-            <div className="flex items-center gap-1.5 px-2 py-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-status-rejected/70" aria-hidden />
-              <span className="h-2.5 w-2.5 rounded-full bg-status-interview/70" aria-hidden />
-              <span className="h-2.5 w-2.5 rounded-full bg-status-offer/70" aria-hidden />
-              <span className="ml-2 font-mono text-[10px] text-faint">discovery · fit-scored</span>
+          {/* Live preview — a real fit-scored Discovery card in an app-window frame. */}
+          <HudFrame
+            chamfer={['tl', 'br']}
+            accentCorner="tl"
+            accentTone="status-offer"
+            node
+            flush
+            className="shadow-2xl shadow-black/40"
+          >
+            <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
+              <span className="hud-label">DISCOVERY · FIT-SCORED</span>
+              <span className="font-mono text-[10px] text-faint">LIVE</span>
             </div>
-            <div className="rounded-[10px] bg-bg p-3">
+            <div
+              className="mx-3.5 h-px"
+              style={{
+                background:
+                  'linear-gradient(to right, color-mix(in srgb, var(--color-system) 50%, transparent), transparent)',
+              }}
+              aria-hidden
+            />
+            <div className="p-3.5">
               <JobCard job={preview} readOnly />
             </div>
-          </div>
+          </HudFrame>
         </div>
       </section>
 
       {/* Features */}
-      <section className="mx-auto max-w-5xl px-4 py-10 md:px-8">
+      <section className="mx-auto max-w-6xl px-4 py-10 md:px-8">
         <div className="grid gap-4 md:grid-cols-3">
           {FEATURES.map((f, i) => (
-            <div key={f.title} className="rounded-[10px] border border-border bg-surface p-5">
-              <div className="font-mono text-xs text-accent">0{i + 1}</div>
-              <h3 className="mt-2 text-sm font-semibold text-fg">{f.title}</h3>
+            <HudFrame
+              key={f.title}
+              chamfer={['tl']}
+              label={`0${i + 1}`}
+              className="h-full"
+            >
+              <h3 className="text-sm font-semibold text-fg">{f.title}</h3>
               <p className="mt-1.5 text-sm leading-relaxed text-muted">{f.body}</p>
-            </div>
+            </HudFrame>
           ))}
         </div>
       </section>
 
       {/* CTA strip */}
-      <section className="mx-auto max-w-5xl px-4 pb-16 md:px-8">
-        <div className="flex flex-col items-center gap-4 rounded-[12px] border border-border bg-surface px-6 py-10 text-center">
+      <section className="mx-auto max-w-6xl px-4 pb-16 md:px-8">
+        <HudFrame
+          chamfer={['tl', 'br']}
+          accentCorner="tl"
+          accentTone="accent"
+          node
+          bodyClassName="flex flex-col items-center gap-4 px-6 py-10 text-center"
+        >
+          <span className="hud-label">READY WHEN YOU ARE</span>
           <h2 className="text-lg font-semibold text-fg">See it with sample data</h2>
           <p className="max-w-md text-sm text-muted">
             Walk the Discovery inbox, the Tracker, and the Needs-action queue —
@@ -123,15 +152,15 @@ export default async function Home() {
           </p>
           <Link
             href="/demo"
-            className="inline-flex h-10 items-center rounded-md bg-accent px-5 text-sm font-medium text-accent-fg transition-[filter] hover:brightness-95"
+            className="hud-cut inline-flex h-10 items-center bg-accent px-5 text-sm font-medium text-accent-fg transition-[filter] hover:brightness-95"
           >
             Open the demo →
           </Link>
-        </div>
+        </HudFrame>
       </section>
 
       <footer className="border-t border-border">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 px-4 py-6 text-xs text-faint md:px-8">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-6 text-xs text-faint md:px-8">
           <span>Next.js 16 · Supabase · Tailwind v4 · Claude</span>
           <div className="flex items-center gap-4">
             <Link href="/legal" className="transition-colors hover:text-muted">

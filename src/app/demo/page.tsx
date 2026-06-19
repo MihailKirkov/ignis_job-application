@@ -1,29 +1,25 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { MISSION, SOURCE_META } from '@/lib/constants';
+import { ACTIVITY_CATEGORY_COLOR, MISSION } from '@/lib/constants';
 import { computeVitals } from '@/lib/pipeline';
-import {
-  cn,
-  formatDateTime,
-  isDueOrOverdue,
-  isOverdue,
-  isTerminal,
-  statusColorToken,
-} from '@/lib/utils';
-import type { ApplicationStatus } from '@/types/database';
+import { cn, formatDateTime, isDueOrOverdue, isOverdue, isTerminal } from '@/lib/utils';
+import type { ApplicationStatus, JobState } from '@/types/database';
+import { SideNav, MobileNav } from '@/components/app-shell';
 import { CommandBridge } from '@/components/needs-action-view';
 import { TrackerStats } from '@/components/tracker-stats';
 import { TrackerBoard } from '@/components/tracker-board';
 import { TrackerConsole } from '@/components/tracker-console';
+import { DiscoveryTabs } from '@/components/discovery-tabs';
 import { JobCard } from '@/components/job-card';
+import { HudFrame } from '@/components/hud-frame';
 import type { FitMap } from '@/components/app-card';
 import type { LogEntry } from '@/components/hud';
 import { EmptyState } from '@/components/ui';
 import {
+  DEMO_ACTIVITY,
   DEMO_APPLICATIONS,
   DEMO_JOBS,
   DEMO_JOB_COUNTS,
-  DEMO_SOURCES,
   DEMO_TODAY,
 } from '@/lib/demo/fixtures';
 
@@ -33,11 +29,7 @@ export const metadata: Metadata = {
 };
 
 type View = 'needs-action' | 'tracker' | 'discovery';
-const VIEWS: { id: View; label: string }[] = [
-  { id: 'needs-action', label: 'Needs action' },
-  { id: 'tracker', label: 'Tracker' },
-  { id: 'discovery', label: 'Discovery' },
-];
+const VIEWS: View[] = ['needs-action', 'tracker', 'discovery'];
 
 // Fit map shared by all demo views (job id → score/verdict).
 const FIT_MAP: FitMap = Object.fromEntries(
@@ -47,73 +39,68 @@ const FIT_MAP: FitMap = Object.fromEntries(
   ]),
 );
 
+// Sidebar badge: due/overdue follow-ups that aren't terminal — same rule as the app.
+const NEEDS_ACTION_COUNT = DEMO_APPLICATIONS.filter(
+  (r) => isDueOrOverdue(r.next_action_date, DEMO_TODAY) && !isTerminal(r.status),
+).length;
+
 export default async function DemoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; board?: string }>;
+  searchParams: Promise<{ view?: string; board?: string; state?: string }>;
 }) {
-  const { view, board } = await searchParams;
-  const active: View = VIEWS.some((v) => v.id === view) ? (view as View) : 'needs-action';
+  const { view, board, state } = await searchParams;
+  const active: View = VIEWS.includes(view as View) ? (view as View) : 'needs-action';
 
   return (
-    <div className="min-h-dvh bg-bg">
-      <header className="sticky top-0 z-20 border-b border-border bg-surface/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-8">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="font-mono text-xs tracking-widest text-system">
-              JOB · CC
-            </Link>
-            <span className="border border-accent/40 bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">
-              Demo · read-only
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/login"
-              className="hud-cut inline-flex h-8 items-center bg-accent px-3 text-sm font-medium text-accent-fg transition-[filter] hover:brightness-95"
-            >
-              Sign in
-            </Link>
-            <Link
-              href="/"
-              className="inline-flex h-8 items-center border border-system/30 bg-surface-2 px-3 text-sm text-fg transition-colors hover:border-system/60 hover:text-system"
-            >
-              ← Home
-            </Link>
-          </div>
+    <div className="bg-bg md:grid md:h-dvh md:grid-cols-[240px_1fr]">
+      <aside className="hidden border-r border-border bg-surface md:block">
+        <SideNav demo activeView={active} needsActionCount={NEEDS_ACTION_COUNT} />
+      </aside>
+      <MobileNav demo activeView={active} />
+      <main className="min-w-0 overflow-y-auto">
+        <div className="mx-auto w-full max-w-6xl space-y-4 px-4 py-6 md:px-8 md:py-8">
+          <DemoBanner />
+          {active === 'needs-action' ? <NeedsActionView /> : null}
+          {active === 'tracker' ? (
+            <TrackerView board={board === 'console' ? 'console' : 'board'} />
+          ) : null}
+          {active === 'discovery' ? <DiscoveryView state={discoveryState(state)} /> : null}
         </div>
-        <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 md:px-8">
-          {VIEWS.map((v) => {
-            const isActive = v.id === active;
-            return (
-              <Link
-                key={v.id}
-                href={`/demo?view=${v.id}`}
-                aria-current={isActive ? 'page' : undefined}
-                className={cn(
-                  '-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors',
-                  isActive
-                    ? 'border-system text-fg'
-                    : 'border-transparent text-muted hover:text-fg',
-                )}
-              >
-                {v.label}
-              </Link>
-            );
-          })}
-        </nav>
-      </header>
-
-      <main className="mx-auto w-full max-w-6xl px-4 py-5 md:px-8 md:py-6">
-        <p className="mb-4 border border-system/20 bg-surface px-3 py-2 text-xs text-muted">
-          Sample data only — buttons are disabled in the demo. Sign in to ingest
-          real jobs, score them against your own profile, and run your pipeline.
-        </p>
-        {active === 'needs-action' ? <NeedsActionView /> : null}
-        {active === 'tracker' ? <TrackerView board={board === 'console' ? 'console' : 'board'} /> : null}
-        {active === 'discovery' ? <DiscoveryView /> : null}
       </main>
     </div>
+  );
+}
+
+// One-line value prop + read-only banner + a prominent, persistent sign-in CTA —
+// present on every demo surface (and visible on mobile, where the sidebar is hidden).
+function DemoBanner() {
+  return (
+    <HudFrame
+      chamfer={['tl', 'br']}
+      accentCorner="tl"
+      accentTone="accent"
+      node
+      bodyClassName="px-4 py-3"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2.5">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="shrink-0 border border-accent/40 bg-accent-soft px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-accent">
+            Demo · read-only
+          </span>
+          <p className="text-sm text-muted">
+            Ingest jobs, AI-score the fit, and run your whole pipeline.{' '}
+            <span className="text-fg">This is sample data — controls are off.</span>
+          </p>
+        </div>
+        <Link
+          href="/login"
+          className="hud-cut inline-flex h-9 shrink-0 items-center bg-accent px-4 text-sm font-medium text-accent-fg transition-[filter] hover:brightness-95"
+        >
+          Get started — sign in →
+        </Link>
+      </div>
+    </HudFrame>
   );
 }
 
@@ -127,36 +114,12 @@ function NeedsActionView() {
 
   const vitals = computeVitals(DEMO_APPLICATIONS.map((r) => r.status));
 
-  const sourceEvents = DEMO_SOURCES.map((s) => ({
-    ts: new Date(s.last_run_at).getTime(),
-    time: formatDateTime(s.last_run_at),
-    colorToken: 'status-applied',
-    text: (
-      <>
-        Ingestion run ·{' '}
-        <span className="text-fg">
-          {SOURCE_META[s.type as keyof typeof SOURCE_META]?.label ?? s.type}
-        </span>
-      </>
-    ),
+  // Same TELEMETRY strip as the real page: the unified activity feed, newest first.
+  const telemetry: LogEntry[] = DEMO_ACTIVITY.map((e) => ({
+    time: formatDateTime(e.created_at),
+    colorToken: ACTIVITY_CATEGORY_COLOR[e.category] ?? 'system',
+    text: e.summary,
   }));
-  const appEvents = [...DEMO_APPLICATIONS]
-    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-    .slice(0, 6)
-    .map((a) => ({
-      ts: new Date(a.updated_at).getTime(),
-      time: formatDateTime(a.updated_at),
-      colorToken: statusColorToken(a.status),
-      text: (
-        <>
-          <span className="text-fg">{a.company}</span> → {a.status}
-        </>
-      ),
-    }));
-  const telemetry: LogEntry[] = [...sourceEvents, ...appEvents]
-    .sort((a, b) => b.ts - a.ts)
-    .slice(0, 8)
-    .map(({ time, text, colorToken }) => ({ time, text, colorToken }));
 
   return (
     <CommandBridge
@@ -217,47 +180,29 @@ function TrackerView({ board }: { board: 'board' | 'console' }) {
 }
 
 // --------------------------------------------------------------------------- Discovery
-function DiscoveryView() {
-  const jobs = DEMO_JOBS.filter((j) => j.state === 'new').sort(
+const DISCOVERY_STATES: JobState[] = ['new', 'saved', 'promoted', 'dismissed'];
+function discoveryState(value: string | undefined): JobState {
+  return DISCOVERY_STATES.includes(value as JobState) ? (value as JobState) : 'new';
+}
+
+function DiscoveryView({ state }: { state: JobState }) {
+  const jobs = DEMO_JOBS.filter((j) => j.state === state).sort(
     (a, b) => (b.fit_score ?? -1) - (a.fit_score ?? -1),
   );
-  const TABS: { state: string; label: string }[] = [
-    { state: 'new', label: 'New' },
-    { state: 'saved', label: 'Saved' },
-    { state: 'promoted', label: 'Promoted' },
-    { state: 'dismissed', label: 'Dismissed' },
-  ];
 
   return (
     <div className="space-y-5">
       <header>
-        <p className="hud-label">SIGNAL INBOX</p>
-        <h1 className="mt-1.5 text-xl font-semibold text-fg">Discovery</h1>
+        <h1 className="text-xl font-semibold text-fg">Discovery</h1>
         <p className="text-sm text-muted">
           Ingested jobs, scored against the sample profile — best fit first.
         </p>
       </header>
 
-      <div className="flex gap-1 overflow-x-auto border-b border-border">
-        {TABS.map((t) => (
-          <span
-            key={t.state}
-            aria-current={t.state === 'new' ? 'page' : undefined}
-            className={cn(
-              '-mb-px flex items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2 text-sm',
-              t.state === 'new' ? 'border-system text-fg' : 'border-transparent text-muted',
-            )}
-          >
-            {t.label}
-            <span className="font-mono text-xs text-faint">
-              {DEMO_JOB_COUNTS[t.state as keyof typeof DEMO_JOB_COUNTS]}
-            </span>
-          </span>
-        ))}
-      </div>
+      <DiscoveryTabs active={state} counts={DEMO_JOB_COUNTS} demo />
 
       {jobs.length === 0 ? (
-        <EmptyState title="Inbox is empty" />
+        <EmptyState title={`No ${state} jobs`} />
       ) : (
         <div className="grid gap-3">
           {jobs.map((job) => (

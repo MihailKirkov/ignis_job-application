@@ -1,7 +1,7 @@
 # Job Command Center
 
 > Ingest jobs, score the fit with AI, and run your whole application pipeline in
-> one dark, dense inbox.
+> one modern, dense inbox.
 
 A personal **job-discovery inbox + application tracker** — a "command-center"
 tool (not a marketing page) for finding roles and running your pipeline. It pulls

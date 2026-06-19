@@ -18,12 +18,12 @@ Conventions used in the sketches:
 
 Every protected page renders inside this two-column shell. The left sidebar is the
 fixed nav (desktop ≥768px); on mobile it collapses to a horizontal scroller at the
-top. Content is capped at `max-w-5xl` and centered.
+top. Content is capped at `max-w-6xl` and centered.
 
 ```
 ┌────────────────┬──────────────────────────────────────────────────────┐
 │ JOB · CC       │                                                        │
-│ Command Center │   <page content — max-w-5xl, scrolls independently>    │
+│ Command Center │   <page content — max-w-6xl, scrolls independently>    │
 │                │                                                        │
 │ │ Needs action │‹3›                                                     │
 │   Tracker      │                                                        │

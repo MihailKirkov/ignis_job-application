@@ -60,17 +60,25 @@ function Lane({
   fitMap,
   readOnly,
   compact = false,
+  dragActive = false,
 }: {
   status: ApplicationStatus;
   rows: ApplicationRow[];
   fitMap: FitMap;
   readOnly: boolean;
   compact?: boolean;
+  // True while any card is being dragged — empty lanes expand back to full
+  // drop targets so the whole lifecycle stays drag-reachable.
+  dragActive?: boolean;
 }) {
   const token = statusColorToken(status);
   // The scrollable card list is the drop target — including its empty space, so
   // an empty lane is still reachable.
   const { setNodeRef, isOver } = useDroppable({ id: status, disabled: readOnly });
+
+  // Collapse an idle, empty active lane to a thin header-only rail so populated
+  // lanes get the horizontal room. It re-expands the moment a drag starts.
+  const collapsed = !compact && rows.length === 0 && !dragActive;
 
   return (
     <HudFrame
@@ -84,12 +92,20 @@ function Lane({
         </div>
       }
       bodyClassName="p-1.5"
+      className={cn(
+        'shrink-0 transition-[width] duration-200',
+        compact ? 'w-full' : collapsed ? 'w-[132px]' : 'w-[300px]',
+      )}
     >
       <div
         ref={setNodeRef}
         className={cn(
           'flex flex-col gap-2 overflow-y-auto overflow-x-hidden rounded-none p-1 transition-colors',
-          compact ? 'max-h-[34vh] min-h-[64px]' : 'max-h-[58vh] min-h-[88px]',
+          compact
+            ? 'max-h-[34vh] min-h-[64px]'
+            : collapsed
+              ? 'min-h-[20px]'
+              : 'max-h-[58vh] min-h-[88px]',
           isOver && 'bg-[color-mix(in_srgb,var(--color-system)_10%,transparent)] ring-1 ring-system/40',
         )}
       >
@@ -100,7 +116,7 @@ function Lane({
             <DraggableBoardCard key={row.id} row={row} fit={row.job_id ? fitMap[row.job_id] : undefined} />
           ),
         )}
-        {rows.length === 0 ? (
+        {rows.length === 0 && !collapsed ? (
           <p className="py-3 text-center font-mono text-[10px] text-faint">
             {readOnly ? '— empty' : isOver ? '▾ drop here' : '— empty'}
           </p>
@@ -214,11 +230,19 @@ export function TrackerBoard({
 
   const board = (
     <div className="space-y-4">
-      {/* Active lanes — fit-to-width grid; wraps responsively, never a page-level
-          horizontal scrollbar. On mobile it stacks to a single column. */}
-      <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      {/* Active lanes — a real kanban: a horizontal flex row of ~300px lanes in an
+          overflow-x:auto scroller. Lanes are NOT compressed to fit the viewport
+          (that's what made cards unreadable); accept horizontal scroll instead. */}
+      <div className="flex items-start gap-3 overflow-x-auto scroll-smooth pb-2">
         {ACTIVE_LANES.map((status) => (
-          <Lane key={status} status={status} rows={byStatus(status)} fitMap={fitMap} readOnly={readOnly} />
+          <Lane
+            key={status}
+            status={status}
+            rows={byStatus(status)}
+            fitMap={fitMap}
+            readOnly={readOnly}
+            dragActive={activeId !== null}
+          />
         ))}
       </div>
 

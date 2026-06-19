@@ -26,7 +26,7 @@ export default async function AppLayout({
       </aside>
       <MobileNav />
       <main className="min-w-0 overflow-y-auto">
-        <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-8 md:py-8">
+        <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">
           {children}
         </div>
       </main>
