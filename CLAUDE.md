@@ -44,8 +44,24 @@ src/app/(app)/                      # protected surfaces: needs-action, tracker,
 src/app/auth/                       # callback / confirm / signout routes
 src/app/api/                        # import + cron + export route handlers
 src/app/api/scoring/chunk/          # processes ONE chunk of a scoring run (batched + cached call)
+src/app/icon.svg                    # brand mark (HUD cyan reticle) — source for the whole icon set
+src/app/{favicon.ico,apple-icon.png} # generated raster icons (auto-served by Next conventions)
+src/app/{manifest,robots,sitemap}.ts # web manifest + robots (disallow /api) + sitemap (/ and /demo)
+src/app/{opengraph,twitter}-image.tsx # next/og 1200×630 HUD social cards (share src/lib/og.tsx)
+scripts/generate-icons.mjs          # `npm run icons` — sharp+png-to-ico rasterize icon.svg → ico/png set
 tests/                              # vitest: normalize, dedupe, filters, profile, ai-* (incl. ai-batch), activity-summary, ingest diff/summarizer (+ sources)
 ```
+
+SEO / icons / social: file-based Next metadata only (no manual `<head>`). The
+root `layout.tsx` sets `metadataBase` (the prod URL), a title template, the
+shared description, and base `openGraph`/`twitter` (images come from the
+`opengraph-image`/`twitter-image` conventions — don't also list them in the
+metadata object or you get duplicate tags); `themeColor`/`colorScheme` live in a
+separate `viewport` export. `/` and `/demo` set their own title/description —
+nested `openGraph`/`twitter` REPLACE (not deep-merge) the parent, so re-include
+`type`/`siteName`/`locale`/`card` there. All icons derive from `app/icon.svg`
+via `npm run icons` (outputs committed; the 192/512/maskable PNGs live in
+`/public` for the manifest).
 
 Perceived performance: route segments stream — the shell paints immediately,
 slow data (the discovery job list, the activity feed) is wrapped in `<Suspense>`

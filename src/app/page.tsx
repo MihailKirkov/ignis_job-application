@@ -1,5 +1,28 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getUser } from '@/lib/supabase/auth';
+
+const LANDING_DESCRIPTION =
+  'Ingest jobs from legitimate APIs and public ATS boards, score each against your profile and CV with Claude, and run every application from “to apply” to offer in one dense inbox.';
+
+export const metadata: Metadata = {
+  title: { absolute: 'Job Command Center — AI-scored job discovery & tracker' },
+  description: LANDING_DESCRIPTION,
+  alternates: { canonical: '/' },
+  openGraph: {
+    type: 'website',
+    siteName: 'Job Command Center',
+    locale: 'en',
+    url: '/',
+    title: 'Job Command Center — AI-scored job discovery & tracker',
+    description: LANDING_DESCRIPTION,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Job Command Center — AI-scored job discovery & tracker',
+    description: LANDING_DESCRIPTION,
+  },
+};
 import { JobCard } from '@/components/job-card';
 import { HudFrame } from '@/components/hud-frame';
 import { StatusLed } from '@/components/hud';

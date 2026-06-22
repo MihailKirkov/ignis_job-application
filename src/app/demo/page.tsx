@@ -23,9 +23,26 @@ import {
   DEMO_TODAY,
 } from '@/lib/demo/fixtures';
 
+const DEMO_DESCRIPTION =
+  'Take a read-only tour with sample data — walk the AI-scored Discovery inbox, the pipeline Tracker, and the Needs-action queue. No account required.';
+
 export const metadata: Metadata = {
-  title: 'Demo — Job Command Center',
-  description: 'A read-only tour of the Job Command Center with sample data.',
+  title: 'Demo',
+  description: DEMO_DESCRIPTION,
+  alternates: { canonical: '/demo' },
+  openGraph: {
+    type: 'website',
+    siteName: 'Job Command Center',
+    locale: 'en',
+    url: '/demo',
+    title: 'Demo · Job Command Center',
+    description: DEMO_DESCRIPTION,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Demo · Job Command Center',
+    description: DEMO_DESCRIPTION,
+  },
 };
 
 type View = 'needs-action' | 'tracker' | 'discovery';
