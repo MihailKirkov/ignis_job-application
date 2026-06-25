@@ -32,6 +32,7 @@ interface AdzunaConfig {
   sort_by?: string; // 'date' | 'relevance' | 'salary'
   results_per_page?: number;
   pages?: number; // how many pages to walk (default 1)
+  distance?: number; // in km, for the 'where' search
 }
 
 function currencyFor(country: string): string {
@@ -69,6 +70,7 @@ export async function fetchAdzuna(
     if (typeof c.salary_min === 'number') params.set('salary_min', String(c.salary_min));
     if (typeof c.max_days_old === 'number') params.set('max_days_old', String(c.max_days_old));
     if (c.full_time) params.set('full_time', '1');
+     if (typeof c.distance === 'number') params.set('distance', String(c.distance));
     params.set('sort_by', c.sort_by ?? 'date');
 
     const url = `${BASE}/${country}/search/${page}?${params.toString()}`;
