@@ -1,5 +1,11 @@
 # Wireframes
 
+> **⚠️ Deprecated — predates the HUD redesign.** This file describes an earlier
+> layout and is no longer kept in sync with the code. For the current UI — the
+> Command Center HUD language, `HudFrame`, the dial/readout components, and the
+> board ⇄ console tracker — see **[`design-system.md`](./design-system.md)**. Kept
+> only as historical reference.
+
 The planned design of each page, as ASCII layouts. These mirror what the Server
 Components actually render — use them as a map of the UI, and update them when a
 page's structure changes.

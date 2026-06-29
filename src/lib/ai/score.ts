@@ -3,11 +3,23 @@
 // `fetchImpl`, so these are unit-tested with canned model output and no network.
 
 import type { JobRow, ProfileRow } from '@/types/database';
-import { buildBatchScorePrompt, buildPrefillPrompt, buildScorePrompt } from './prompt';
-import { parseBatchScoreResponse, parsePrefillResponse, parseScoreResponse } from './parse';
+import {
+  buildBatchScorePrompt,
+  buildDraftPrompt,
+  buildPrefillPrompt,
+  buildScorePrompt,
+} from './prompt';
+import {
+  parseBatchScoreResponse,
+  parseDraftResponse,
+  parsePrefillResponse,
+  parseScoreResponse,
+} from './parse';
 import type {
   BatchScoringJob,
   CvPrefill,
+  DraftRequest,
+  DraftResult,
   JobFitColumns,
   ModelCall,
   ScoreResult,
@@ -84,4 +96,9 @@ export async function runBatchScore(
 
 export async function runPrefill(call: ModelCall, cvText: string): Promise<CvPrefill> {
   return parsePrefillResponse(await call(buildPrefillPrompt(cvText)));
+}
+
+// Personalize a base template (variables already filled) into a polished draft.
+export async function runDraft(call: ModelCall, req: DraftRequest): Promise<DraftResult> {
+  return parseDraftResponse(await call(buildDraftPrompt(req)));
 }

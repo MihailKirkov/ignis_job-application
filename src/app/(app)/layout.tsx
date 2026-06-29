@@ -1,6 +1,6 @@
 import { requireUser } from '@/lib/supabase/auth';
 import { createClient } from '@/lib/supabase/server';
-import { TERMINAL_STATUSES } from '@/lib/constants';
+import { OUTREACH_BUMP_RESOLVED, TERMINAL_STATUSES } from '@/lib/constants';
 import { todayISO } from '@/lib/utils';
 import { MobileNav, SideNav } from '@/components/app-shell';
 
@@ -12,12 +12,28 @@ export default async function AppLayout({
   const user = await requireUser();
   const supabase = await createClient();
 
-  // Count for the sidebar "Needs action" badge.
-  const { count } = await supabase
-    .from('applications')
-    .select('id', { count: 'exact', head: true })
-    .lte('next_action_date', todayISO())
-    .not('status', 'in', `(${TERMINAL_STATUSES.map((s) => `"${s}"`).join(',')})`);
+  // Count for the sidebar "Needs action" badge — merges the same three sources as
+  // the command-bridge Priority Alerts: due application next-actions, contact
+  // follow-ups, and outreach bumps (all ≤ today, non-terminal).
+  const today = todayISO();
+  const [{ count: appCount }, { count: contactCount }, { count: outreachCount }] =
+    await Promise.all([
+      supabase
+        .from('applications')
+        .select('id', { count: 'exact', head: true })
+        .lte('next_action_date', today)
+        .not('status', 'in', `(${TERMINAL_STATUSES.map((s) => `"${s}"`).join(',')})`),
+      supabase
+        .from('contacts')
+        .select('id', { count: 'exact', head: true })
+        .lte('next_follow_up_at', today),
+      supabase
+        .from('outreach')
+        .select('id', { count: 'exact', head: true })
+        .lte('next_bump_at', today)
+        .not('status', 'in', `(${OUTREACH_BUMP_RESOLVED.map((s) => `"${s}"`).join(',')})`),
+    ]);
+  const count = (appCount ?? 0) + (contactCount ?? 0) + (outreachCount ?? 0);
 
   return (
     <div className="md:grid md:grid-cols-[240px_1fr] md:h-dvh">

@@ -4,7 +4,25 @@
 
 A personal **job-discovery inbox + application tracker**. Next.js (App Router) on
 Vercel, Supabase (Postgres + Auth + RLS). Built multi-user from day one (single
-owner for now) — every row is scoped by `user_id` and enforced with RLS.
+owner for now) — every row is scoped by `user_id` and enforced with RLS. Each
+morning it ingests roles from public job APIs + ATS boards, AI-scores them against
+your profile/CV, and ranks the inbox best-fit-first.
+
+## Documentation (`docs/`)
+
+Start at [`docs/README.md`](docs/README.md) (the index). Deep dives, all reconciled
+to the code:
+
+| Doc | Covers |
+| --- | ------ |
+| [`docs/setup.md`](docs/setup.md) | env vars, migrations, auth, deploy, cron — run it locally + on Vercel. |
+| [`docs/code-structure.md`](docs/code-structure.md) | layers, the Supabase clients, where code lives, request flows. |
+| [`docs/database.md`](docs/database.md) | every table/column/RLS/index/trigger + ER diagram (14 tables). |
+| [`docs/ai-scoring.md`](docs/ai-scoring.md) | the fit-scoring pipeline: prompts, batching, caching, encrypted key, `scoring_runs`, cron. |
+| [`docs/logging.md`](docs/logging.md) | `activity_events` (human feed) vs `ingestion_runs` (ops) + `/activity`. |
+| [`docs/design-system.md`](docs/design-system.md) | the HUD language: tokens, `HudFrame`, dials, board/console. |
+| [`docs/testing.md`](docs/testing.md) | the Vitest suite (19 files / 227 tests) + the manual walkthrough. |
+| [`docs/cowork-import.md`](docs/cowork-import.md) | the on-demand `/api/import` recipe. |
 
 ## Stack / conventions
 
@@ -29,17 +47,24 @@ supabase/migrations/0002_profiles.sql # profiles table + RLS + private 'cvs' sto
 supabase/migrations/0003_ai_scoring.sql # jobs fit_* columns + user_secrets (encrypted API key)
 supabase/migrations/0004_activity_ingestion.sql # activity_events + ingestion_runs + ingestion_run_sources (+ RLS)
 supabase/migrations/0005_scoring_runs.sql # scoring_runs (async fit-scoring runs) + owner RLS
+supabase/migrations/0006_companies_contacts.sql # companies + contacts (network layer) + applications.company_id
+supabase/migrations/0007_outreach.sql # outreach (touch log) + RLS; widens activity_events.category
+supabase/migrations/0008_attribution_indexes.sql # (user_id, channel, status) indexes for the channel funnel
+supabase/migrations/0009_message_templates.sql # message_templates (reusable outreach boilerplate) + RLS; NO activity events
 src/types/database.ts               # hand-written DB types (type aliases, not interfaces)
 src/lib/supabase/                   # the three clients + auth helpers
 src/lib/constants.ts                # enums (statuses, channels, modes, seniority, fit verdicts, source meta, activity vocab)
 src/lib/utils.ts                    # dates, salary/status formatting, cn()
 src/lib/profile.ts                  # pure profile/CV helpers (sanitize, parse, validate; unit-tested)
-src/lib/ai/                         # AI fit-scoring + CV prefill (pure prompt/parse/hash + server-only client)
+src/lib/contacts.ts                 # pure companies/contacts helpers (normalize, validate; unit-tested)
+src/lib/insights.ts                 # pure channel-attribution funnel (buildChannelFunnel/bestChannel; unit-tested)
+src/lib/templates.ts                # pure message-template helpers (fillTemplate/{variable} substitution, validate; unit-tested)
+src/lib/ai/                         # AI fit-scoring + CV prefill + message drafting (pure prompt/parse/hash + server-only client)
 src/lib/activity/                   # unified activity log: summary.ts/feed.ts (pure), log.ts + record-run.ts (DB glue)
-src/lib/actions/                    # 'use server' mutations (applications, profile, scoring, ai-key, …) — each logs one activity event
+src/lib/actions/                    # 'use server' mutations (applications, profile, scoring, ai-key, templates, …) — each logs one activity event (templates are the exception: no event)
 src/lib/sources/                    # NormalizedJob shape + per-source fetchers
 src/lib/discovery/                  # normalize, dedupe, filters, ingest (executeIngestion + new/updated diff) — pure + unit-tested
-src/app/(app)/                      # protected surfaces: needs-action, tracker, discovery, sources, activity, profile
+src/app/(app)/                      # protected surfaces: needs-action, tracker, discovery, contacts, sources, activity, insights, profile
                                     #   each segment has loading.tsx (HUD skeleton) + error.tsx (HudError boundary)
 src/app/auth/                       # callback / confirm / signout routes
 src/app/api/                        # import + cron + export route handlers
@@ -49,7 +74,7 @@ src/app/{favicon.ico,apple-icon.png} # generated raster icons (auto-served by Ne
 src/app/{manifest,robots,sitemap}.ts # web manifest + robots (disallow /api) + sitemap (/ and /demo)
 src/app/{opengraph,twitter}-image.tsx # next/og 1200×630 HUD social cards (share src/lib/og.tsx)
 scripts/generate-icons.mjs          # `npm run icons` — sharp+png-to-ico rasterize icon.svg → ico/png set
-tests/                              # vitest: normalize, dedupe, filters, profile, ai-* (incl. ai-batch), activity-summary, ingest diff/summarizer (+ sources)
+tests/                              # vitest: normalize, dedupe, filters, profile, contacts, insights, templates, ai-* (incl. ai-batch, ai-draft), activity-summary, ingest diff/summarizer (+ sources)
 ```
 
 SEO / icons / social: file-based Next metadata only (no manual `<head>`). The
@@ -91,14 +116,16 @@ full `/activity` feed read this table. Ingestion runs (manual-all, per-source,
 cron) additionally write structured `ingestion_runs` + `ingestion_run_sources`
 rows and emit one `ingestion.completed` event; counts distinguish **fetched vs
 new vs updated** (`persistJobs` diffs existing keys before the upsert — never
-label fetched as upserted). Secrets are REDACTED from stored run messages.
+label fetched as upserted). Secrets are REDACTED from stored run messages. The
+one deliberate exception to one-event-per-mutation: **message-template** CRUD
+(`actions/templates.ts`) emits NO event — templates are settings, not activity.
 
 Profile + CV: `profiles` is one row per user (PK `user_id`). CV text lands in
 `cv_text` two ways — pasted, or extracted from a PDF uploaded to the private
 `cvs` Storage bucket (RLS per-user folder) using `unpdf` (serverless PDF.js, no
 native binaries). Both paths go through Server Actions in `actions/profile.ts`.
 
-AI (fit-scoring + CV prefill): uses the **Anthropic API** via the official
+AI (fit-scoring + CV prefill + message drafting): uses the **Anthropic API** via the official
 `@anthropic-ai/sdk`, **server-only**, on **Claude Haiku 4.5** (`claude-haiku-4-5`
 — fast/cheap, no `effort` param). `src/lib/ai` splits into a **pure core**
 (`prompt.ts`, `parse.ts` (zod), `hash.ts`, `score.ts` — unit-tested via an
@@ -109,6 +136,18 @@ SDK wrapper, `crypto.ts` aes-256-gcm, `resolve-key.ts`). Each user stores their
 a message, never a crash. `jobs.scored_profile_hash` makes scores re-stale when
 the profile changes. **Keep `src/lib/ai` server-only modules out of the test
 import graph** — `server-only` throws under vitest.
+
+Message templates (reusable outreach boilerplate, Phase 4): `message_templates`
+rows carry a `body`/`subject` with `{company}/{role}/{contact}/{stack}/{name}`
+slots. Pure `src/lib/templates.ts` (`fillTemplate` substitutes known tokens,
+leaves unknown/empty ones literal; `buildTemplatePayload`/`validateTemplate`) is
+unit-tested. The `draftMessage` action (`actions/templates.ts`) fills the slots
+from the contact/company/profile context (always available, no key) and — when
+`ai:true` — personalizes the filled draft with `runDraft` (the same `ModelCall`
+seam; pure `buildDraftPrompt`/`parseDraftResponse`), degrading with
+`NO_KEY_MESSAGE` if no key. It returns the draft only; it never auto-sends or
+auto-logs. Templates are managed on **/profile** and used from the **outreach
+composer** on /contacts (pick → fill → optional ✦ AI → Log outreach).
 
 Batched + cached + async scoring (the inbox can hold hundreds of jobs):
 `buildBatchScorePrompt` scores up to `BATCH_SCORE_CAP` (8) jobs in ONE request,

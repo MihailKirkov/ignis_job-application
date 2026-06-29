@@ -28,6 +28,7 @@ export function buildActivitySummary(type: ActivityType, meta: Meta = {}): strin
   const role = s(meta, 'role');
   const at = company ? ` at ${company}` : '';
   const sourceLabel = s(meta, 'label') ?? s(meta, 'type') ?? 'a';
+  const name = s(meta, 'name');
 
   switch (type) {
     case 'application.created':
@@ -61,6 +62,28 @@ export function buildActivitySummary(type: ActivityType, meta: Meta = {}): strin
     case 'ingestion.completed': {
       const status = s(meta, 'status') ?? 'completed';
       return `Ingestion ${status} · ${n(meta, 'fetched')} fetched · ${n(meta, 'new')} new`;
+    }
+    case 'company.created':
+      return `Added company ${name ?? '—'}`;
+    case 'company.updated':
+      return `Updated company ${name ?? '—'}`;
+    case 'company.deleted':
+      return `Removed company ${name ?? '—'}`;
+    case 'contact.created':
+      return `Added contact ${name ?? '—'}${at}`;
+    case 'contact.updated':
+      return `Updated contact ${name ?? '—'}${at}`;
+    case 'contact.deleted':
+      return `Removed contact ${name ?? '—'}${at}`;
+    case 'outreach.logged': {
+      const channel = s(meta, 'channel');
+      return `Logged ${channel ?? 'outreach'}${at}`;
+    }
+    case 'outreach.status_changed': {
+      const to = s(meta, 'to') ?? '?';
+      const from = s(meta, 'from');
+      const subject = company ?? name ?? 'Outreach';
+      return from ? `${subject}: ${from} → ${to}` : `${subject} → ${to}`;
     }
     default:
       return type;

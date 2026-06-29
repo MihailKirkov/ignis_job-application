@@ -91,6 +91,28 @@ export type ScoringChunkResult = {
   error?: string;
 };
 
+// AI message drafting (Phase 4). Takes a base template (its {variables} already
+// substituted) plus grounding context and asks the model to produce a polished,
+// personalized outreach message. Pure wire shape — no SDK/DB.
+export type DraftRequest = {
+  kind: string; // a human label for the template kind, guides tone/structure
+  template: string; // the base template body (variables already filled), may be empty
+  subject?: string | null; // base subject line (variables already filled)
+  company?: string | null;
+  role?: string | null;
+  stack?: string[] | null;
+  contactName?: string | null;
+  contactRole?: string | null;
+  sender?: { name?: string | null; headline?: string | null; summary?: string | null } | null;
+  notes?: string | null; // freeform extra guidance from the user
+};
+
+// The drafted message. subject is null when the channel/template has none.
+export type DraftResult = {
+  subject: string | null;
+  body: string;
+};
+
 // Structured fields extracted from a CV to pre-fill the profile form.
 export type CvPrefill = {
   skills: string[];

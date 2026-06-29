@@ -1,6 +1,6 @@
 # Job Command Center
 
-A personal job-discovery and application tracker that ingests roles from a dozen sources every morning, scores each one against your profile with AI, and ranks your inbox best-fit-first — so the only thing left to do is apply.
+A personal job-discovery and application tracker that ingests roles from ten public sources every morning, scores each one against your profile with AI, and ranks your inbox best-fit-first — so the only thing left to do is apply.
 
 **[Live demo (no signup)](https://ignis-job-application.vercel.app/demo)** · **[App](https://ignis-job-application.vercel.app/)** · **[Source](https://github.com/MihailKirkov/ignis_job-application)**
 

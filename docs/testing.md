@@ -25,17 +25,21 @@ Prerequisite: the app is set up and running (`npm run dev`, signed in). See
 | Sidebar → **Sign out**                                | Back to `/login`; protected pages are blocked again.                |
 | (If enabled) **Continue with Google**                 | Google OAuth → back to the app signed in.                           |
 
-### 1. Needs action (`/needs-action`) — the hero
+### 1. Needs action (`/needs-action`) — the command bridge
 
-The queue of applications whose `next_action_date` is **today or earlier** and that
-are **not** Rejected/Closed.
+The HUD "command bridge" homepage (see [`design-system.md`](./design-system.md)):
 
-- Starts empty: "Queue is clear ✓".
-- After you create an application with a past/today next-action date (step 2), it
-  appears here, split into **Overdue** (red) and **Due today**.
-- The sidebar **Needs action** item shows a count badge.
-- Click **✓ Clear** on an item → its next-action is cleared and it leaves the queue
-  immediately.
+- **Command bar:** a **T-MINUS countdown** to the mission deadline + the milestone
+  date. Both come from `MISSION` in `src/lib/constants.ts` — edit `targetDate` /
+  `milestone` and reload to confirm the countdown re-targets.
+- **Vitals:** Active / Applied / Interview / Offer readouts + a **RESPONSE RATE**
+  radial gauge (replies ÷ sent). Create/advance a few applications and watch them move.
+- **Priority alerts:** the queue of applications whose `next_action_date` is **today
+  or earlier** and that are **not** Rejected/Closed — split into **Overdue** (red)
+  and **Due today** (amber). Starts as "queue clear". The sidebar **Needs action**
+  item shows a count badge.
+- Click **✓ Clear** on an item → its next-action clears and it leaves the queue.
+- **Telemetry:** a live feed of recent activity events (see section 6).
 
 ### 2. Tracker (`/tracker`) — your pipeline
 
@@ -53,6 +57,20 @@ are **not** Rejected/Closed.
   it.
 - **Delete** → confirm dialog → row removed.
 - **Export JSON** → downloads `applications-YYYY-MM-DD.json` with all your rows.
+
+**Board vs Console** (toggle top-right, reflected in `?view=`):
+
+- **Console** — the dense table (search + status filter apply here).
+- **▦ Board** — a drag-and-drop kanban. Drag a card across lanes (To apply → Applied
+  → … → Offer) and it **moves immediately** (optimistic) while the status persists in
+  the background; the status badge recolours. **Rejected / Closed** are compact
+  archive drop zones below — drag a card there to archive it. Drag to an invalid spot
+  or kill the network and the card **reverts** with a toast. Keyboard: focus a card's
+  grip handle and use space + arrows. With OS reduce-motion on, the drop animation is
+  suppressed.
+- **Auto-fill from Discovery:** when you **Promote** a job (section 4), the new card
+  lands in **To apply** with company/role/link pre-filled and `job_id` linked, so its
+  AI **fit score** badge rides along onto the board/console.
 
 Things worth verifying:
 
@@ -100,12 +118,52 @@ Try: add one Adzuna source and one public ATS board (e.g. Greenhouse token
   **Import** → the job appears under **New** (this is the Cowork on-demand path; see
   `docs/cowork-import.md`).
 
-### 5. Sources & attribution (`/legal`)
+**AI fit-scoring** (needs a profile + an Anthropic key — section 5; full pipeline in
+[`ai-scoring.md`](./ai-scoring.md)):
+
+- Each **New** card has a **Score / Rescore** control. Click it → after a moment the
+  card shows a fit **badge** (0–100 + verdict colour: green strong / amber medium /
+  red weak) and a one-line rationale; matched skills + gaps are recorded.
+- **Score new jobs** (batch) → kicks off an async run; progress shows **"scored X /
+  N"** with a **Cancel**, and each badge fills in as its chunk returns. Reload
+  mid-run → you're offered **Resume**.
+- The **New** tab is sorted **best-fit-first** (unscored last) — score a handful and
+  reload to see the order change.
+- **Staleness:** edit your profile (section 5) and the existing scores go stale;
+  re-running scores them again (the stored profile hash changed).
+- **No key?** Scoring is disabled with a message — never a crash.
+
+### 5. Profile & CV (`/profile`)
+
+- **Profile form:** identity, seniority, skills, target roles/locations/salary, work
+  modes, languages, links. Save → a `profile.updated` activity event is logged.
+- **CV:** paste plain text, **or** upload a **PDF** → its text is extracted (`unpdf`)
+  into `cv_text` and the file is stored in the private `cvs` bucket. **Remove** clears
+  the file.
+- **AI key (Profile → AI):** paste your Anthropic key → it's encrypted and stored in
+  `user_secrets` (the plaintext is never shown again). **Clear** removes it. Without a
+  stored key, scoring falls back to the server `ANTHROPIC_API_KEY` if set.
+- **Prefill from CV:** with CV text present, this extracts skills / seniority /
+  summary / target roles for you to review and save (it does not auto-write).
+
+### 6. Activity (`/activity`)
+
+The unified feed of every action (see [`logging.md`](./logging.md)):
+
+- Every mutation you did above (created/edited/deleted an application, saved/dismissed/
+  promoted a job, changed a source, updated the profile, ran ingestion) appears as a
+  line with a category dot, a human summary, and a timestamp; clicking it deep-links
+  to the relevant surface.
+- **Filter** by category + date range (the bar submits instantly; the log streams in).
+- **Ingestion rows expand** (native `<details>`) into a per-source breakdown table
+  (fetched / new / updated / status). Confirm secrets never appear in a message.
+
+### 7. Sources & attribution (`/legal`)
 
 Linked from the sidebar footer. Lists every source with a link back to its origin
 (satisfies RemoteOK/Remotive attribution requirements).
 
-### 6. API endpoints (optional manual checks)
+### 8. API endpoints (optional manual checks)
 
 With the dev server running and signed in (browser carries the session cookie):
 
@@ -124,7 +182,7 @@ curl -i http://localhost:3000/api/cron/ingest
 curl -H "Authorization: Bearer <CRON_SECRET>" http://localhost:3000/api/cron/ingest
 ```
 
-### 7. Multi-user / RLS sanity check (optional but recommended)
+### 9. Multi-user / RLS sanity check (optional but recommended)
 
 Sign in as a **second** email, add your own applications/sources, then sign back in
 as the first user. You should **never** see the other account's rows — RLS scopes
@@ -151,7 +209,7 @@ canned JSON).
 ### Running
 
 ```bash
-npm test          # run once (vitest run) — 79 tests
+npm test          # run once (vitest run) — 19 files, 227 tests
 npm run test:watch # re-run on file changes while developing
 ```
 
@@ -167,15 +225,45 @@ Config is `vitest.config.ts` (node environment, `@/*` path alias, picks up
 
 ### What each file covers
 
-| File                               | Covers (source under test)                                                                 |
-| ---------------------------------- | ------------------------------------------------------------------------------------------ |
-| `tests/normalize.test.ts`          | `src/lib/discovery/normalize.ts` — fuzzy key, seniority/mode guess, salary + date parsing.  |
-| `tests/dedupe.test.ts`             | `src/lib/discovery/dedupe.ts` — exact `(source, external_id)` + fuzzy cross-source dedupe.  |
-| `tests/filters.test.ts`            | `src/lib/discovery/filters.ts` — every filter criterion + combined `filterJobs`.            |
-| `tests/filter-params.test.ts`      | `src/lib/discovery/filter-params.ts` — criteria ⇄ URL-param mapping + roundtrip.            |
-| `tests/sources/normalizers.test.ts`| all 8 fetchers in `src/lib/sources/*` — field mapping, HTML/entity stripping, edge cases.   |
-| `tests/ingest.test.ts`             | `src/lib/discovery/ingest.ts` — failure isolation, cross-source dedupe, `toJobRows` shape.  |
-| `tests/import-schema.test.ts`      | `src/lib/discovery/import-schema.ts` — `/api/import` payload validation + id derivation.     |
+The suite is **19 files / 227 tests**, all over the **pure** logic (no network, no
+DB). The `src/lib/ai/*` server-only modules (`client`, `crypto`, `resolve-key`,
+`scoring-run`) are deliberately **out** of the test import graph — `server-only`
+throws under Vitest — so only the pure AI core is unit-tested (via a fake
+`ModelCall`).
+
+**Discovery brain + sources**
+
+| File | Covers (source under test) |
+| ---- | -------------------------- |
+| `tests/normalize.test.ts` | `discovery/normalize.ts` — fuzzy key, seniority/mode guess, salary + date parsing, HTML strip. |
+| `tests/dedupe.test.ts` | `discovery/dedupe.ts` — exact `(source, external_id)` + fuzzy cross-source dedupe + source trust ranking. |
+| `tests/filters.test.ts` | `discovery/filters.ts` — every filter criterion + combined `filterJobs`. |
+| `tests/filter-params.test.ts` | `discovery/filter-params.ts` — criteria ⇄ URL-param mapping + roundtrip. |
+| `tests/import-schema.test.ts` | `discovery/import-schema.ts` — `/api/import` payload validation + id derivation. |
+| `tests/ingest.test.ts` | `discovery/ingest.ts` — failure isolation, cross-source dedupe, `toJobRows`/`diffJobs`/`summarizeRun`. |
+| `tests/pipeline.test.ts` | `lib/pipeline.ts` — the shared ingestion pipeline glue. |
+| `tests/sources/normalizers.test.ts` | all **10** fetchers in `sources/*` — field mapping, HTML/entity stripping, edge cases. |
+
+**Profile + activity**
+
+| File | Covers |
+| ---- | ------ |
+| `tests/profile.test.ts` | `lib/profile.ts` — CV sanitize/clamp, list/links parse, normalization, `validateProfile`. |
+| `tests/contacts.test.ts` | `lib/contacts.ts` — text/email/url/channel normalization, `buildCompanyPayload`/`buildContactPayload`, `validate*`. |
+| `tests/insights.test.ts` | `lib/insights.ts` — `buildChannelFunnel` stage counts + rates, null→Other, ordering, `funnelTotals`, `bestChannel`. |
+| `tests/templates.test.ts` | `lib/templates.ts` — `fillTemplate` `{variable}` substitution (case/whitespace, unknown/empty left literal, idempotent), `extractVars`, `buildTemplatePayload`/`validateTemplate`. |
+| `tests/activity-summary.test.ts` | `activity/summary.ts` — `categoryFromType` + `buildActivitySummary` for every event type (incl. company/contact). |
+
+**AI (pure core, via an injected `ModelCall`)**
+
+| File | Covers |
+| ---- | ------ |
+| `tests/ai-prompt.test.ts` | `ai/prompt.ts` — single + batch + prefill prompt builders, cache flag, caps. |
+| `tests/ai-parse.test.ts` | `ai/parse.ts` — score/prefill parse + coerce/clamp, fence/prose extraction. |
+| `tests/ai-batch.test.ts` | `ai/parse.ts` + `ai/score.ts` — `parseBatchScoreResponse` tolerance (missing/extra/duplicate ids) + `runBatchScore`. |
+| `tests/ai-hash.test.ts` | `ai/hash.ts` — `scoredProfileHash` stability + order/case independence. |
+| `tests/ai-score.test.ts` | `ai/score.ts` — `runScore`/`runPrefill` orchestration + the `progress.ts` chunk accounting. |
+| `tests/ai-draft.test.ts` | `ai/prompt.ts` + `ai/parse.ts` + `ai/score.ts` — `buildDraftPrompt` context embedding, `parseDraftResponse` (subject coercion, fences, malformed throws), `runDraft`. |
 
 ### What is and isn't tested here
 
@@ -184,7 +272,7 @@ Config is `vitest.config.ts` (node environment, `@/*` path alias, picks up
 - ❌ **Not unit-tested:** React components, server actions, and DB/RLS behavior —
   those depend on a live Supabase and are covered by the **manual walkthrough**
   above plus `npm run typecheck` and `npm run build`. (The multi-user/RLS check in
-  A.7 is the manual stand-in for DB-level tests.)
+  A.9 is the manual stand-in for DB-level tests.)
 
 ### The pattern for source-fetcher tests
 

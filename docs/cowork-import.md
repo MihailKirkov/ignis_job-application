@@ -13,8 +13,8 @@ import schema, which you load via the app's **Paste import** box (Discovery →
 - ❌ **No** headless scrapers that bypass auth, anti-bot, rate limits, or CAPTCHAs.
 - ❌ **No** LinkedIn or Indeed scraping.
 - Prefer the official APIs and public ATS endpoints the app already supports
-  (Adzuna, Arbeitnow, Remotive, RemoteOK, Greenhouse, Lever, Ashby, Workable).
-  Use this recipe only for the gaps.
+  (Adzuna, Arbeitnow, Remotive, RemoteOK, Greenhouse, Lever, Ashby, Workable,
+  Recruitee, SmartRecruiters). Use this recipe only for the gaps.
 
 ## Import schema (per job)
 

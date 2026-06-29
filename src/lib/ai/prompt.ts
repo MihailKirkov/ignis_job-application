@@ -2,7 +2,13 @@
 // No SDK, no network. Kept deterministic (no timestamps/ids) so prompt caching
 // stays effective and the output is testable.
 
-import type { BatchScoringJob, ModelRequest, ScoringJob, ScoringProfile } from './types';
+import type {
+  BatchScoringJob,
+  DraftRequest,
+  ModelRequest,
+  ScoringJob,
+  ScoringProfile,
+} from './types';
 
 // Max jobs scored in a single batched request. Capped low so one call stays fast
 // and the JSON stays well-formed; also the chunk size for a scoring run.
@@ -148,6 +154,55 @@ matching exactly this shape:
 }
 Infer seniority from years of experience and titles; use null if unclear. Only
 use information present in the CV; do not invent employers, skills, or dates.`;
+
+// Message drafting: personalize a base template into a ready-to-send outreach
+// message. The model is told to keep the user's intent + structure, fill any gaps
+// from the context, and never invent facts. Returns STRICT JSON {subject, body}.
+const DRAFT_SYSTEM = `You are an assistant that drafts concise, professional job-search outreach messages on behalf of a candidate.
+You are given a BASE TEMPLATE (the candidate's own boilerplate, possibly with gaps) plus context about the company, role, contact, and sender.
+
+Rewrite the template into a polished, personalized, ready-to-send message:
+- Keep the candidate's intent, tone, and overall structure; improve clarity and flow.
+- Fill naturally from the given context; do NOT invent employers, facts, numbers, or links.
+- Keep it brief and human — no buzzword padding, no placeholder tokens like {company} left in.
+- If a subject is relevant (email), provide one; otherwise return null for it.
+
+Reply with STRICT JSON only — no prose, no markdown fences — matching exactly this shape:
+{
+  "subject": <string or null>,
+  "body": "<the message body>"
+}`;
+
+function renderStack(stack?: string[] | null): string {
+  const v = (stack ?? []).filter(Boolean);
+  return v.length ? v.join(', ') : '(none given)';
+}
+
+export function buildDraftPrompt(req: DraftRequest): ModelRequest {
+  const context = [
+    line('Template kind', req.kind),
+    line('Company', req.company),
+    line('Role', req.role),
+    line('Contact name', req.contactName),
+    line('Contact role', req.contactRole),
+    line('Candidate tech stack', renderStack(req.stack)),
+    line('Sender name', req.sender?.name ?? null),
+    line('Sender headline', req.sender?.headline ?? null),
+    line('Sender summary', req.sender?.summary ?? null),
+    line('Extra guidance', req.notes),
+  ].join('\n');
+  return {
+    model: AI_MODEL,
+    max_tokens: 1024,
+    system: DRAFT_SYSTEM,
+    messages: [
+      {
+        role: 'user',
+        content: `CONTEXT\n${context}\n\nBASE SUBJECT\n${req.subject?.trim() || '(none)'}\n\nBASE TEMPLATE\n${req.template.trim() || '(empty — write from the context)'}`,
+      },
+    ],
+  };
+}
 
 export function buildPrefillPrompt(cvText: string): ModelRequest {
   return {

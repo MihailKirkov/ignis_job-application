@@ -1,6 +1,11 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { ACTIVITY_CATEGORY_COLOR, MISSION, TERMINAL_STATUSES } from '@/lib/constants';
+import {
+  ACTIVITY_CATEGORY_COLOR,
+  MISSION,
+  OUTREACH_BUMP_RESOLVED,
+  TERMINAL_STATUSES,
+} from '@/lib/constants';
 import { computeVitals } from '@/lib/pipeline';
 import { formatDateTime, isOverdue, todayISO } from '@/lib/utils';
 import { activityHref } from '@/lib/activity/feed';
@@ -8,10 +13,14 @@ import type {
   ActivityEventRow,
   ApplicationRow,
   ApplicationStatus,
+  CompanyRow,
+  ContactRow,
+  OutreachRow,
   ProfileRow,
   ScoreVerdict,
 } from '@/types/database';
 import { CommandBridge } from '@/components/needs-action-view';
+import type { AlertItem } from '@/components/alert-cards';
 import type { FitMap } from '@/components/app-card';
 import type { LogEntry } from '@/components/hud';
 import { NewApplicationButton } from '@/components/application-dialog';
@@ -22,8 +31,13 @@ export default async function NeedsActionPage() {
   const today = todayISO();
 
   const notTerminal = `(${TERMINAL_STATUSES.map((s) => `"${s}"`).join(',')})`;
+  const bumpResolved = `(${OUTREACH_BUMP_RESOLVED.map((s) => `"${s}"`).join(',')})`;
   const [
     { data },
+    { data: dueContactRows },
+    { data: dueOutreachRows },
+    { data: companyRows },
+    { data: contactNameRows },
     { data: profileRow },
     { data: statusRows },
     { data: activityRows },
@@ -37,6 +51,19 @@ export default async function NeedsActionPage() {
       .lte('next_action_date', today)
       .not('status', 'in', notTerminal)
       .order('next_action_date', { ascending: true }),
+    supabase
+      .from('contacts')
+      .select('*')
+      .lte('next_follow_up_at', today)
+      .order('next_follow_up_at', { ascending: true }),
+    supabase
+      .from('outreach')
+      .select('*')
+      .lte('next_bump_at', today)
+      .not('status', 'in', bumpResolved)
+      .order('next_bump_at', { ascending: true }),
+    supabase.from('companies').select('id, name'),
+    supabase.from('contacts').select('id, name'),
     supabase.from('profiles').select('full_name, skills, cv_text').maybeSingle(),
     supabase.from('applications').select('status'),
     supabase
@@ -82,12 +109,22 @@ export default async function NeedsActionPage() {
   const onboardingComplete = steps.every((s) => s.done);
 
   const rows = (data ?? []) as ApplicationRow[];
-  const overdue = rows.filter((r) => isOverdue(r.next_action_date));
-  const dueToday = rows.filter((r) => !isOverdue(r.next_action_date));
+  const dueContacts = (dueContactRows ?? []) as ContactRow[];
+  const dueOutreach = (dueOutreachRows ?? []) as OutreachRow[];
 
   const vitals = computeVitals((statusRows ?? []).map((r) => r.status as ApplicationStatus));
 
-  // Fit scores for the alert cards (only the due rows that came from a job).
+  // id → name lookups for the contact/outreach alert cards.
+  const companyName: Record<string, string> = {};
+  for (const c of (companyRows ?? []) as Pick<CompanyRow, 'id' | 'name'>[]) {
+    companyName[c.id] = c.name;
+  }
+  const contactName: Record<string, string> = {};
+  for (const c of (contactNameRows ?? []) as Pick<ContactRow, 'id' | 'name'>[]) {
+    contactName[c.id] = c.name;
+  }
+
+  // Fit scores for the application alert cards (only the due rows from a job).
   const jobIds = rows.map((r) => r.job_id).filter((id): id is string => Boolean(id));
   const fitMap: FitMap = {};
   if (jobIds.length > 0) {
@@ -104,6 +141,48 @@ export default async function NeedsActionPage() {
       fitMap[j.id] = { score: j.fit_score, verdict: j.fit_verdict };
     }
   }
+
+  // Merge the three due-or-overdue sources into one queue, each tagged with its
+  // due date so we can split overdue vs due-today and sort oldest-first.
+  const dated: { date: string; item: AlertItem }[] = [
+    ...rows
+      .filter((r) => r.next_action_date)
+      .map((r) => ({
+        date: r.next_action_date as string,
+        item: {
+          kind: 'application' as const,
+          key: `app-${r.id}`,
+          row: r,
+          fit: r.job_id ? fitMap[r.job_id] : undefined,
+        },
+      })),
+    ...dueContacts
+      .filter((c) => c.next_follow_up_at)
+      .map((c) => ({
+        date: c.next_follow_up_at as string,
+        item: {
+          kind: 'contact' as const,
+          key: `contact-${c.id}`,
+          row: c,
+          companyName: c.company_id ? companyName[c.company_id] : undefined,
+        },
+      })),
+    ...dueOutreach
+      .filter((o) => o.next_bump_at)
+      .map((o) => ({
+        date: o.next_bump_at as string,
+        item: {
+          kind: 'outreach' as const,
+          key: `outreach-${o.id}`,
+          row: o,
+          companyName: o.company_id ? companyName[o.company_id] : undefined,
+          contactName: o.contact_id ? contactName[o.contact_id] : undefined,
+        },
+      })),
+  ];
+  const byDate = (a: { date: string }, b: { date: string }) => a.date.localeCompare(b.date);
+  const overdue = dated.filter((x) => isOverdue(x.date)).sort(byDate).map((x) => x.item);
+  const dueToday = dated.filter((x) => !isOverdue(x.date)).sort(byDate).map((x) => x.item);
 
   // Telemetry: the unified activity feed (latest ~10), each line linking to its
   // entity (ingestion events deep-link to the run on /activity).
@@ -130,7 +209,6 @@ export default async function NeedsActionPage() {
         overdue={overdue}
         dueToday={dueToday}
         telemetry={telemetry}
-        fitMap={fitMap}
         actions={<NewApplicationButton />}
       />
     </div>

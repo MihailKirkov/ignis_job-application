@@ -28,8 +28,19 @@ export type Channel =
 
 export type JobState = 'new' | 'saved' | 'dismissed' | 'promoted';
 
+// Outreach lifecycle status (the touch log).
+export type OutreachStatus = 'Sent' | 'Replied' | 'No reply' | 'Bounced';
+
 // AI fit-score verdict (also drives the discovery badge colour).
 export type ScoreVerdict = 'strong' | 'medium' | 'weak';
+
+// Message-template kind (reusable outreach boilerplate).
+export type TemplateKind =
+  | 'detachering_dm'
+  | 'open_app_email'
+  | 'follow_up'
+  | 'recruiter_dm'
+  | 'other';
 
 export type Seniority =
   | 'intern'
@@ -44,7 +55,15 @@ export type ProfileLink = { label: string; url: string };
 
 // Activity log + ingestion log -------------------------------------------------
 
-export type ActivityCategory = 'application' | 'job' | 'profile' | 'source' | 'ingestion';
+export type ActivityCategory =
+  | 'application'
+  | 'job'
+  | 'profile'
+  | 'source'
+  | 'ingestion'
+  | 'company'
+  | 'contact'
+  | 'outreach';
 
 // Append-only event vocabulary. The category is derivable from the type prefix.
 export type ActivityType =
@@ -58,7 +77,15 @@ export type ActivityType =
   | 'source.added'
   | 'source.removed'
   | 'source.toggled'
-  | 'ingestion.completed';
+  | 'ingestion.completed'
+  | 'company.created'
+  | 'company.updated'
+  | 'company.deleted'
+  | 'contact.created'
+  | 'contact.updated'
+  | 'contact.deleted'
+  | 'outreach.logged'
+  | 'outreach.status_changed';
 
 export type IngestionTrigger = 'manual_all' | 'manual_source' | 'cron';
 export type RunStatus = 'ok' | 'partial' | 'error';
@@ -127,6 +154,71 @@ export type ApplicationRow = {
   next_action: string | null;
   next_action_date: string | null;
   notes: string | null;
+  // Optional link to a company (additive; the free-text `company` is kept).
+  company_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// companies — first-class employers the network layer hangs off.
+export type CompanyRow = {
+  id: string;
+  user_id: string;
+  name: string;
+  website: string | null;
+  location: string | null;
+  ats_type: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// contacts — the people CRM. company_id is nullable (set null on company delete);
+// channel reuses the application Channel vocabulary ("how I met them").
+export type ContactRow = {
+  id: string;
+  user_id: string;
+  company_id: string | null;
+  name: string;
+  role: string | null;
+  email: string | null;
+  linkedin_url: string | null;
+  channel: Channel | null;
+  notes: string | null;
+  last_contacted_at: string | null;
+  next_follow_up_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// outreach — one row per touch (message) sent. All entity links are nullable
+// (set null on delete) so the log outlives the contact/company/application.
+export type OutreachRow = {
+  id: string;
+  user_id: string;
+  contact_id: string | null;
+  company_id: string | null;
+  application_id: string | null;
+  channel: Channel | null;
+  status: OutreachStatus;
+  subject: string | null;
+  body: string | null;
+  sent_at: string;
+  next_bump_at: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// message_templates — reusable outreach boilerplate with {variable} slots. Pure
+// settings the user owns; saving/editing emits NO activity event (see 0009).
+export type MessageTemplateRow = {
+  id: string;
+  user_id: string;
+  name: string;
+  kind: TemplateKind;
+  subject: string | null;
+  body: string;
   created_at: string;
   updated_at: string;
 };
@@ -258,6 +350,10 @@ export type Database = {
     Tables: {
       jobs: TableShape<JobRow>;
       applications: TableShape<ApplicationRow>;
+      companies: TableShape<CompanyRow>;
+      contacts: TableShape<ContactRow>;
+      outreach: TableShape<OutreachRow>;
+      message_templates: TableShape<MessageTemplateRow>;
       sources: TableShape<SourceRow>;
       saved_filters: TableShape<SavedFilterRow>;
       profiles: TableShape<ProfileRow>;

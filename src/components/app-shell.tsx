@@ -12,8 +12,10 @@ const NAV = [
   { href: '/needs-action', label: 'Needs action', code: 'Q', view: 'needs-action' },
   { href: '/tracker', label: 'Tracker', code: 'T', view: 'tracker' },
   { href: '/discovery', label: 'Discovery', code: 'D', view: 'discovery' },
+  { href: '/contacts', label: 'Contacts', code: 'C' },
   { href: '/sources', label: 'Sources', code: 'S' },
   { href: '/activity', label: 'Activity', code: 'A' },
+  { href: '/insights', label: 'Insights', code: 'I' },
   { href: '/profile', label: 'Profile', code: 'P' },
 ] as const;
 

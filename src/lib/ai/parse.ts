@@ -4,7 +4,7 @@
 import { z } from 'zod';
 import { SENIORITY_LEVELS } from '@/lib/constants';
 import type { Seniority } from '@/types/database';
-import type { CvPrefill, ScoreResult } from './types';
+import type { CvPrefill, DraftResult, ScoreResult } from './types';
 
 // Models occasionally wrap JSON in prose or ```json fences despite instructions.
 // Pull out the first balanced-looking object before parsing.
@@ -115,6 +115,24 @@ export function parseBatchScoreResponse(
     });
   }
   return out;
+}
+
+const DraftSchema = z.object({
+  subject: z.union([z.string(), z.null()]).optional(),
+  body: z.string(),
+});
+
+export function parseDraftResponse(text: string): DraftResult {
+  const result = DraftSchema.safeParse(parseJson(text));
+  if (!result.success) {
+    throw new Error(`Malformed draft response: ${result.error.issues[0]?.message ?? 'invalid shape'}`);
+  }
+  const data = result.data;
+  const subject = typeof data.subject === 'string' ? data.subject.trim() : '';
+  return {
+    subject: subject ? subject.slice(0, 300) : null,
+    body: data.body.trim().slice(0, 8_000),
+  };
 }
 
 function coerceSeniority(value: string | null | undefined): Seniority | null {

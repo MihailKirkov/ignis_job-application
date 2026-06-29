@@ -6,6 +6,7 @@ import { cn, formatDateTime, isDueOrOverdue, isOverdue, isTerminal } from '@/lib
 import type { ApplicationStatus, JobState } from '@/types/database';
 import { SideNav, MobileNav } from '@/components/app-shell';
 import { CommandBridge } from '@/components/needs-action-view';
+import type { AlertItem } from '@/components/alert-cards';
 import { TrackerStats } from '@/components/tracker-stats';
 import { TrackerBoard } from '@/components/tracker-board';
 import { TrackerConsole } from '@/components/tracker-console';
@@ -126,8 +127,15 @@ function NeedsActionView() {
   const due = DEMO_APPLICATIONS.filter(
     (r) => isDueOrOverdue(r.next_action_date, DEMO_TODAY) && !isTerminal(r.status),
   );
-  const overdue = due.filter((r) => isOverdue(r.next_action_date, DEMO_TODAY));
-  const dueToday = due.filter((r) => !isOverdue(r.next_action_date, DEMO_TODAY));
+  // The demo only carries application alerts (no contact/outreach sample data).
+  const toItem = (r: (typeof due)[number]): AlertItem => ({
+    kind: 'application',
+    key: `app-${r.id}`,
+    row: r,
+    fit: r.job_id ? FIT_MAP[r.job_id] : undefined,
+  });
+  const overdue = due.filter((r) => isOverdue(r.next_action_date, DEMO_TODAY)).map(toItem);
+  const dueToday = due.filter((r) => !isOverdue(r.next_action_date, DEMO_TODAY)).map(toItem);
 
   const vitals = computeVitals(DEMO_APPLICATIONS.map((r) => r.status));
 
@@ -145,7 +153,6 @@ function NeedsActionView() {
       overdue={overdue}
       dueToday={dueToday}
       telemetry={telemetry}
-      fitMap={FIT_MAP}
       readOnly
     />
   );

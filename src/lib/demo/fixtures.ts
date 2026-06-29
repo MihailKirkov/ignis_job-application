@@ -389,6 +389,7 @@ function application(
   return {
     user_id: DEMO_USER,
     job_id: null,
+    company_id: null,
     location: null,
     mode: null,
     channel: null,

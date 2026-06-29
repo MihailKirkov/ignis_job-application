@@ -8,6 +8,9 @@ describe('categoryFromType', () => {
     expect(categoryFromType('profile.updated')).toBe('profile');
     expect(categoryFromType('source.toggled')).toBe('source');
     expect(categoryFromType('ingestion.completed')).toBe('ingestion');
+    expect(categoryFromType('company.created')).toBe('company');
+    expect(categoryFromType('contact.updated')).toBe('contact');
+    expect(categoryFromType('outreach.logged')).toBe('outreach');
   });
 });
 
@@ -60,6 +63,37 @@ describe('buildActivitySummary', () => {
     expect(
       buildActivitySummary('ingestion.completed', { status: 'ok', fetched: 257, new: 18 }),
     ).toBe('Ingestion ok · 257 fetched · 18 new');
+  });
+
+  it('summarizes company events by name', () => {
+    expect(buildActivitySummary('company.created', { name: 'Sioux' })).toBe('Added company Sioux');
+    expect(buildActivitySummary('company.updated', { name: 'Sioux' })).toBe(
+      'Updated company Sioux',
+    );
+    expect(buildActivitySummary('company.deleted', { name: 'Sioux' })).toBe('Removed company Sioux');
+  });
+
+  it('summarizes contact events by name + company', () => {
+    expect(
+      buildActivitySummary('contact.created', { name: 'Jane Doe', company: 'Sioux' }),
+    ).toBe('Added contact Jane Doe at Sioux');
+    expect(buildActivitySummary('contact.deleted', { name: 'Jane Doe' })).toBe(
+      'Removed contact Jane Doe',
+    );
+  });
+
+  it('summarizes outreach logged + status change', () => {
+    expect(
+      buildActivitySummary('outreach.logged', { channel: 'LinkedIn', company: 'Sioux' }),
+    ).toBe('Logged LinkedIn at Sioux');
+    expect(buildActivitySummary('outreach.logged', {})).toBe('Logged outreach');
+    expect(
+      buildActivitySummary('outreach.status_changed', {
+        from: 'Sent',
+        to: 'Replied',
+        company: 'Sioux',
+      }),
+    ).toBe('Sioux: Sent → Replied');
   });
 
   it('never throws on missing meta', () => {

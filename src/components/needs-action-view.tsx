@@ -1,6 +1,5 @@
-import type { ApplicationRow } from '@/types/database';
 import { formatDate } from '@/lib/utils';
-import { AppCard, type FitMap } from './app-card';
+import { AlertCard, type AlertItem } from './alert-cards';
 import { CountdownTimer } from './hud-clock';
 import { HudFrame } from './hud-frame';
 import { LogFeed, RadialMeter, SectionLabel, StatReadout, type LogEntry } from './hud';
@@ -46,21 +45,20 @@ export function CommandBridge({
   overdue,
   dueToday,
   telemetry,
-  fitMap,
   readOnly = false,
   actions,
 }: {
   mission: Mission;
   vitals: Vitals;
-  overdue: ApplicationRow[];
-  dueToday: ApplicationRow[];
+  // The merged Priority-Alerts queue: applications, contact follow-ups, and
+  // outreach bumps, split into overdue vs due-today.
+  overdue: AlertItem[];
+  dueToday: AlertItem[];
   telemetry: LogEntry[];
-  fitMap: FitMap;
   readOnly?: boolean;
   actions?: React.ReactNode;
 }) {
   const total = overdue.length + dueToday.length;
-  const fitFor = (row: ApplicationRow) => (row.job_id ? fitMap[row.job_id] : undefined);
 
   return (
     <div className="space-y-4">
@@ -158,14 +156,8 @@ export function CommandBridge({
                     OVERDUE · {overdue.length}
                   </SectionLabel>
                   <div className="grid gap-2">
-                    {overdue.map((row) => (
-                      <AppCard
-                        key={row.id}
-                        row={row}
-                        fit={fitFor(row)}
-                        severity="overdue"
-                        readOnly={readOnly}
-                      />
+                    {overdue.map((item) => (
+                      <AlertCard key={item.key} item={item} severity="overdue" readOnly={readOnly} />
                     ))}
                   </div>
                 </div>
@@ -174,14 +166,8 @@ export function CommandBridge({
                 <div className="space-y-2">
                   <SectionLabel className="text-accent">DUE TODAY · {dueToday.length}</SectionLabel>
                   <div className="grid gap-2">
-                    {dueToday.map((row) => (
-                      <AppCard
-                        key={row.id}
-                        row={row}
-                        fit={fitFor(row)}
-                        severity="due"
-                        readOnly={readOnly}
-                      />
+                    {dueToday.map((item) => (
+                      <AlertCard key={item.key} item={item} severity="due" readOnly={readOnly} />
                     ))}
                   </div>
                 </div>

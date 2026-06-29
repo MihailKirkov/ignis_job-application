@@ -4,11 +4,13 @@ import type {
   ApplicationStatus,
   Channel,
   JobState,
+  OutreachStatus,
   ScoreVerdict,
   ScoringRunStatus,
   ScoringTrigger,
   Seniority,
   SourceType,
+  TemplateKind,
   WorkMode,
 } from '@/types/database';
 
@@ -59,6 +61,38 @@ export const CHANNELS: Channel[] = [
 
 export const JOB_STATES: JobState[] = ['new', 'saved', 'dismissed', 'promoted'];
 
+// Outreach (the touch log) -----------------------------------------------------
+
+export const OUTREACH_STATUSES: OutreachStatus[] = ['Sent', 'Replied', 'No reply', 'Bounced'];
+
+// A bump (follow-up reminder) is moot once the thread is resolved either way.
+export const OUTREACH_BUMP_RESOLVED: OutreachStatus[] = ['Replied', 'Bounced'];
+
+export const OUTREACH_STATUS_COLOR: Record<OutreachStatus, string> = {
+  Sent: 'status-applied', // cyan — in flight
+  Replied: 'status-offer', // green — got a response
+  'No reply': 'status-grey',
+  Bounced: 'status-rejected', // red
+};
+
+// Message templates (reusable outreach boilerplate) -----------------------------
+
+export const TEMPLATE_KINDS: TemplateKind[] = [
+  'detachering_dm',
+  'open_app_email',
+  'follow_up',
+  'recruiter_dm',
+  'other',
+];
+
+export const TEMPLATE_KIND_LABEL: Record<TemplateKind, string> = {
+  detachering_dm: 'Detachering DM',
+  open_app_email: 'Open-application email',
+  follow_up: 'Follow-up',
+  recruiter_dm: 'Recruiter DM',
+  other: 'Other',
+};
+
 // AI fit verdicts (best -> worst) and their badge colour tokens.
 export const FIT_VERDICTS: ScoreVerdict[] = ['strong', 'medium', 'weak'];
 
@@ -91,6 +125,9 @@ export const ACTIVITY_CATEGORIES: ActivityCategory[] = [
   'profile',
   'source',
   'ingestion',
+  'company',
+  'contact',
+  'outreach',
 ];
 
 // The full append-only event vocabulary (category derives from the prefix).
@@ -106,6 +143,14 @@ export const ACTIVITY_TYPES: ActivityType[] = [
   'source.removed',
   'source.toggled',
   'ingestion.completed',
+  'company.created',
+  'company.updated',
+  'company.deleted',
+  'contact.created',
+  'contact.updated',
+  'contact.deleted',
+  'outreach.logged',
+  'outreach.status_changed',
 ];
 
 // Category → colour token (drives the telemetry LED + /activity dots) and a
@@ -116,6 +161,9 @@ export const ACTIVITY_CATEGORY_COLOR: Record<ActivityCategory, string> = {
   profile: 'status-interview',
   source: 'status-screening',
   ingestion: 'status-offer',
+  company: 'highlight',
+  contact: 'system',
+  outreach: 'status-applied',
 };
 
 export const ACTIVITY_CATEGORY_ICON: Record<ActivityCategory, string> = {
@@ -124,6 +172,9 @@ export const ACTIVITY_CATEGORY_ICON: Record<ActivityCategory, string> = {
   profile: 'PRF',
   source: 'SRC',
   ingestion: 'ING',
+  company: 'CMP',
+  contact: 'CON',
+  outreach: 'OUT',
 };
 
 export const SOURCE_TYPES: SourceType[] = [

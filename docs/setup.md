@@ -32,19 +32,34 @@ npm install
 
 ---
 
-## 2. Run the database migration
+## 2. Run the database migrations
 
-This creates the four tables, enables Row-Level Security on all of them, adds the
-owner-only policies, the dedupe indexes, and the `updated_at` triggers.
+These create the **ten** tables, enable Row-Level Security on all of them, add the
+owner-only policies, the dedupe/sort indexes, the private `cvs` Storage bucket, and
+the `updated_at` triggers. Run them **in order**:
+
+| File | Adds |
+| ---- | ---- |
+| `0001_init.sql` | `jobs`, `applications`, `sources`, `saved_filters` |
+| `0002_profiles.sql` | `profiles` + the private `cvs` bucket |
+| `0003_ai_scoring.sql` | `jobs.fit_*` columns + `user_secrets` |
+| `0004_activity_ingestion.sql` | `activity_events`, `ingestion_runs`, `ingestion_run_sources` |
+| `0005_scoring_runs.sql` | `scoring_runs` |
+| `0006_companies_contacts.sql` | `companies`, `contacts` + `applications.company_id` |
+| `0007_outreach.sql` | `outreach` (the touch log) |
+| `0008_attribution_indexes.sql` | channel-funnel indexes (no new tables) |
+| `0009_message_templates.sql` | `message_templates` (reusable outreach boilerplate) |
+
+(Full schema reference: [`database.md`](./database.md).)
 
 **Option A — dashboard (simplest):**
 
 1. In the Supabase dashboard, open **SQL Editor → New query**.
-2. Open `supabase/migrations/0001_init.sql` from this repo, copy its **entire**
+2. For **each** migration in order, open the file from this repo, copy its **entire**
    contents, paste into the editor, and click **Run**.
 3. You should see "Success. No rows returned." Verify under **Database → Tables**
-   that `applications`, `jobs`, `sources`, and `saved_filters` exist, and under
-   **Authentication → Policies** that each table shows owner-only policies.
+   that all ten tables exist, under **Authentication → Policies** that each shows
+   owner-only policies, and under **Storage** that a private `cvs` bucket exists.
 
 **Option B — Supabase CLI:**
 
@@ -144,6 +159,29 @@ sends it as `Authorization: Bearer <CRON_SECRET>`; the route rejects anything el
 
 ---
 
+## 6.5 AI fit-scoring keys (Anthropic)
+
+AI fit-scoring + CV→profile prefill use the **Anthropic API** (Claude Haiku 4.5).
+Two env vars, both **server-only** (never prefix with `NEXT_PUBLIC`):
+
+| env var | Required? | What it's for |
+| ------- | --------- | ------------- |
+| `APP_ENCRYPTION_KEY` | to store **per-user** keys | App secret used to encrypt each user's stored Anthropic key at rest (aes-256-gcm). Generate any long random string: `node -e "console.log(crypto.randomBytes(32).toString('base64'))"`. **Rotating it invalidates already-stored keys.** |
+| `ANTHROPIC_API_KEY` | optional | Owner/demo **fallback** key, used only when a signed-in user has **not** set their own. |
+
+**The per-user key flow:** each user can paste their own Anthropic key in the app
+(**Profile → AI**); it's encrypted with `APP_ENCRYPTION_KEY` and stored in
+`user_secrets`. At scoring time the app resolves: the user's own key → the
+`ANTHROPIC_API_KEY` fallback → none (scoring is disabled with a message, never a
+crash). So for a personal/demo deploy, set `ANTHROPIC_API_KEY` and everything works
+out of the box; to let other users bring their own keys, set `APP_ENCRYPTION_KEY`
+too. Full detail in [`ai-scoring.md`](./ai-scoring.md).
+
+> Like the ATS board tokens, a user's Anthropic key is **not** an env var — it's
+> stored (encrypted) per user. `ANTHROPIC_API_KEY` is only the shared fallback.
+
+---
+
 ## 7. Create `.env.local`
 
 Copy the template and fill in everything from steps 4–6:
@@ -161,6 +199,8 @@ ADZUNA_APP_ID=xxxxxxxx
 ADZUNA_APP_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 CRON_SECRET=your-long-random-string
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
+APP_ENCRYPTION_KEY=your-long-random-string   # encrypts per-user Anthropic keys
+ANTHROPIC_API_KEY=sk-ant-...                  # optional owner/demo fallback
 ```
 
 `.env.local` is gitignored. **Important:** `NEXT_PUBLIC_*` values are baked into
@@ -217,7 +257,10 @@ For a full functional walkthrough, see [`testing.md`](./testing.md).
 | Adzuna App ID / Key        | developer.adzuna.com              | `ADZUNA_APP_ID` / `_KEY`        | Adzuna fetcher                   |
 | Cron secret                | you generate it                   | `CRON_SECRET`                   | guards `/api/cron/ingest`        |
 | Site URL                   | your domain                       | `NEXT_PUBLIC_SITE_URL`          | auth redirect building           |
-| ATS board tokens           | the company's public board slug   | **app UI** (Sources), not env   | Greenhouse/Lever/Ashby/Workable  |
+| App encryption key         | you generate it                   | `APP_ENCRYPTION_KEY`            | encrypt per-user Anthropic keys  |
+| Anthropic key (fallback)   | console.anthropic.com             | `ANTHROPIC_API_KEY`             | AI fit-scoring (owner/demo)      |
+| ATS board tokens           | the company's public board slug   | **app UI** (Sources), not env   | Greenhouse/Lever/Ashby/Workable/Recruitee/SmartRecruiters |
+| Anthropic key (per-user)   | console.anthropic.com             | **app UI** (Profile → AI), encrypted | that user's AI fit-scoring  |
 
 ---
 
@@ -237,3 +280,8 @@ For a full functional walkthrough, see [`testing.md`](./testing.md).
   `Authorization: Bearer …` header.
 - **Cron returns "requires … SUPABASE_SERVICE_ROLE_KEY"** — set that env var; the
   scheduled run needs it (the manual "Refresh inbox" button does not).
+- **Scoring says "No Anthropic API key available"** — set your own key in **Profile
+  → AI** (needs `APP_ENCRYPTION_KEY` to store it), or set the `ANTHROPIC_API_KEY`
+  fallback. Scoring degrades with this message; it never crashes.
+- **Stored Anthropic key suddenly stops working** — `APP_ENCRYPTION_KEY` was changed;
+  rotating it invalidates already-encrypted keys. Re-enter the key in Profile → AI.

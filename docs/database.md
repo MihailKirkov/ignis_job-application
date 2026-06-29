@@ -1,12 +1,25 @@
 # Database
 
-Postgres on Supabase. Six application tables, all owned by a Supabase Auth user
-and protected by Row-Level Security. The source of truth is the migrations under
-`supabase/migrations/` (`0001_init.sql` for the original four tables,
-`0002_profiles.sql` for `profiles` + the private CV storage bucket,
-`0003_ai_scoring.sql` for the `jobs.fit_*` columns + `user_secrets`); the
-TypeScript mirror is `src/types/database.ts`. This doc explains the shape and the
-*why*.
+Postgres on Supabase. **Fourteen application tables**, all owned by a Supabase Auth
+user and protected by Row-Level Security. The source of truth is the migrations under
+`supabase/migrations/`:
+
+| Migration | Adds |
+| --------- | ---- |
+| `0001_init.sql` | the original four: `jobs`, `applications`, `sources`, `saved_filters` (+ the `set_updated_at` trigger). |
+| `0002_profiles.sql` | `profiles` + the private `cvs` Storage bucket. |
+| `0003_ai_scoring.sql` | the `jobs.fit_*` columns + `user_secrets` (encrypted API key). |
+| `0004_activity_ingestion.sql` | `activity_events` + `ingestion_runs` + `ingestion_run_sources`. |
+| `0005_scoring_runs.sql` | `scoring_runs` (async fit-scoring runs). |
+| `0006_companies_contacts.sql` | `companies` + `contacts` (the network layer) + `applications.company_id`; widens the `activity_events.category` vocabulary. |
+| `0007_outreach.sql` | `outreach` (the touch log) + widens the `activity_events.category` vocabulary again. |
+| `0008_attribution_indexes.sql` | `(user_id, channel, status)` indexes on `applications` + `outreach` for the channel funnel (no new columns). |
+| `0009_message_templates.sql` | `message_templates` (reusable outreach boilerplate with `{variable}` slots). |
+
+The TypeScript mirror is `src/types/database.ts`. This doc explains the shape and
+the *why*. See also [`ai-scoring.md`](./ai-scoring.md) (the fit columns +
+`scoring_runs` + `user_secrets`) and [`logging.md`](./logging.md) (`activity_events`
++ the ingestion tables).
 
 ---
 
@@ -20,7 +33,22 @@ erDiagram
     USERS ||--o{ JOBS          : owns
     USERS ||--o{ SOURCES       : owns
     USERS ||--o{ SAVED_FILTERS : owns
+    USERS ||--o{ ACTIVITY_EVENTS       : owns
+    USERS ||--o{ INGESTION_RUNS        : owns
+    USERS ||--o{ INGESTION_RUN_SOURCES : owns
+    USERS ||--o{ SCORING_RUNS          : owns
+    USERS ||--o{ COMPANIES             : owns
+    USERS ||--o{ CONTACTS              : owns
+    USERS ||--o{ OUTREACH              : owns
+    USERS ||--o{ MESSAGE_TEMPLATES     : owns
     JOBS  ||--o{ APPLICATIONS  : "promoted into"
+    COMPANIES ||--o{ CONTACTS     : "employs"
+    COMPANIES ||--o{ APPLICATIONS : "linked to"
+    COMPANIES ||--o{ OUTREACH     : "addressed to"
+    CONTACTS  ||--o{ OUTREACH     : "sent to"
+    APPLICATIONS ||--o{ OUTREACH  : "about"
+    INGESTION_RUNS ||--o{ INGESTION_RUN_SOURCES : "breaks down into"
+    SOURCES ||--o{ INGESTION_RUN_SOURCES : "attributed to"
 
     USERS {
         uuid id PK "auth.users (managed by Supabase Auth)"
@@ -60,6 +88,7 @@ erDiagram
         uuid id PK
         uuid user_id FK "-> auth.users.id, on delete cascade"
         uuid job_id FK "-> jobs.id, nullable, on delete set null"
+        uuid company_id FK "-> companies.id, nullable, on delete set null"
         text company
         text role
         text location
@@ -123,6 +152,120 @@ erDiagram
         timestamptz created_at
         timestamptz updated_at
     }
+
+    ACTIVITY_EVENTS {
+        uuid id PK
+        uuid user_id FK "-> auth.users.id, on delete cascade"
+        text type "application.status_changed | job.promoted | ..."
+        text category "application | job | profile | source | ingestion"
+        text entity_type "application | job | profile | source | ingestion_run"
+        uuid entity_id "nullable, NO FK (log outlives the entity)"
+        text summary "precomputed human line"
+        jsonb meta
+        timestamptz created_at
+    }
+
+    INGESTION_RUNS {
+        uuid id PK
+        uuid user_id FK "-> auth.users.id, on delete cascade"
+        text trigger "manual_all | manual_source | cron"
+        text status "ok | partial | error"
+        integer sources_run
+        integer jobs_fetched
+        integer jobs_new
+        integer jobs_updated
+        timestamptz started_at
+        timestamptz finished_at
+        integer duration_ms
+        timestamptz created_at
+    }
+
+    INGESTION_RUN_SOURCES {
+        uuid id PK
+        uuid run_id FK "-> ingestion_runs.id, on delete cascade"
+        uuid user_id FK "-> auth.users.id (denormalized for RLS)"
+        uuid source_id FK "-> sources.id, nullable, on delete set null"
+        text source_type
+        text source_label
+        text status "ok | error | skipped"
+        integer http_status
+        integer jobs_fetched
+        integer jobs_new
+        integer jobs_updated
+        integer duration_ms
+        text message "secrets REDACTED before storing"
+        timestamptz created_at
+    }
+
+    SCORING_RUNS {
+        uuid id PK
+        uuid user_id FK "-> auth.users.id, on delete cascade"
+        text trigger "manual | cron"
+        text status "queued | running | done | error | cancelled"
+        integer total
+        integer completed
+        integer failed
+        timestamptz started_at
+        timestamptz finished_at
+        text error
+        timestamptz created_at
+    }
+
+    COMPANIES {
+        uuid id PK
+        uuid user_id FK "-> auth.users.id, on delete cascade"
+        text name "unique per user on lower(name)"
+        text website
+        text location
+        text ats_type
+        text notes
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    CONTACTS {
+        uuid id PK
+        uuid user_id FK "-> auth.users.id, on delete cascade"
+        uuid company_id FK "-> companies.id, nullable, on delete set null"
+        text name
+        text role
+        text email
+        text linkedin_url
+        text channel "Detachering | LinkedIn | Referral | ... | null"
+        text notes
+        timestamptz last_contacted_at
+        date next_follow_up_at
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    OUTREACH {
+        uuid id PK
+        uuid user_id FK "-> auth.users.id, on delete cascade"
+        uuid contact_id FK "-> contacts.id, nullable, on delete set null"
+        uuid company_id FK "-> companies.id, nullable, on delete set null"
+        uuid application_id FK "-> applications.id, nullable, on delete set null"
+        text channel "Detachering | LinkedIn | ... | null"
+        text status "Sent | Replied | No reply | Bounced"
+        text subject
+        text body
+        timestamptz sent_at
+        date next_bump_at
+        text notes
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    MESSAGE_TEMPLATES {
+        uuid id PK
+        uuid user_id FK "-> auth.users.id, on delete cascade"
+        text name
+        text kind "detachering_dm | open_app_email | follow_up | recruiter_dm | other"
+        text subject
+        text body "{company}/{role}/{contact}/{stack}/{name} slots"
+        timestamptz created_at
+        timestamptz updated_at
+    }
 ```
 
 > `USERS` is Supabase's built-in `auth.users` table — we don't define it, we only
@@ -133,10 +276,37 @@ erDiagram
 
 ## Relationships & lifecycle
 
-- **Ownership (6×):** `applications`, `jobs`, `sources`, `saved_filters`,
-  `profiles`, and `user_secrets` each belong to a user via `user_id`. This is what
-  RLS keys on. `profiles` and `user_secrets` are the **1:1** tables — `user_id` is
-  their primary key, so there is at most one row per user.
+- **Ownership (all 14):** `applications`, `jobs`, `sources`, `saved_filters`,
+  `profiles`, `user_secrets`, `activity_events`, `ingestion_runs`,
+  `ingestion_run_sources`, `scoring_runs`, `companies`, `contacts`, `outreach`, and
+  `message_templates` each belong to a user via `user_id`. This is what RLS keys on. `profiles` and
+  `user_secrets` are the **1:1** tables — `user_id` is their primary key, so there is
+  at most one row per user.
+- **Network layer (`companies` → `contacts` / `applications`):** a contact and an
+  application each carry a **nullable** `company_id` FK to `companies.id` with
+  `on delete set null`, so deleting a company never deletes the people or
+  applications built around it — they just unlink. Companies are deduped per user by
+  a unique index on `lower(name)`, which is the idempotency anchor for
+  "auto-create-or-link a company by name" when a contact is saved.
+- **Outreach (`outreach` → `contacts` / `companies` / `applications`):** each touch
+  carries **three nullable** FKs (`contact_id`, `company_id`, `application_id`), all
+  `on delete set null`, so the touch log outlives any entity it referenced. Logging a
+  touch stamps the linked contact's `last_contacted_at`; its `next_bump_at` feeds the
+  follow-up queue alongside contact follow-ups and application next-actions.
+- **Message templates (`message_templates`):** standalone, user-scoped reusable
+  outreach boilerplate — no FKs beyond `user_id`. The `body`/`subject` carry
+  `{company}/{role}/{contact}/{stack}/{name}` slots filled when composing a draft.
+  `kind` is `check`-constrained to `detachering_dm | open_app_email | follow_up |
+  recruiter_dm | other`. Unlike every other table, mutating a template emits **no**
+  `activity_events` row — templates are settings, not activity (see
+  [`logging.md`](./logging.md)).
+- **Ingestion runs (`ingestion_runs` → `ingestion_run_sources`):** a run row has a
+  per-source breakdown; the child FKs `run_id` (`on delete cascade`) and carries a
+  **denormalized `user_id`** so RLS can scope it without a join. Its `source_id` FK
+  is `on delete set null` (the breakdown outlives a deleted source). See
+  [`logging.md`](./logging.md).
+- **Activity events:** `activity_events.entity_id` is **nullable with NO FK** on
+  purpose — the append-only log must outlive the entity it references.
 - **Promotion (`jobs` → `applications`):** `applications.job_id` is a **nullable**
   FK to `jobs.id`. When you *Promote* a discovered job, a new application row is
   created with `job_id` set and the job's `state` flipped to `promoted`. Manually
@@ -181,7 +351,8 @@ the controlled vocabularies:
 - `salary` is **text** (e.g. "€60–70k") — human shorthand, unlike the numeric
   `jobs.salary_min/max`.
 - Indexes: `(user_id, status)` for the stat counts/filter, `(user_id, next_action_date)`
-  for the Needs-action queue and the next-action-first sort, `(job_id)` for the link.
+  for the Needs-action queue and the next-action-first sort, `(job_id)` for the link,
+  and `(user_id, channel, status)` (added in `0008`) for the channel-attribution funnel.
 
 ### `sources` — per-user ingestion config
 
@@ -229,14 +400,91 @@ Anthropic key **encrypted at rest** (aes-256-gcm via `APP_ENCRYPTION_KEY`). The
 ciphertext is **never selected into client-facing reads** — pages only check for
 existence (`select('user_id')`); the key is decrypted server-side at call time in
 `src/lib/ai/resolve-key.ts`, which falls back to the `ANTHROPIC_API_KEY` env key
-when a user has none.
+when a user has none. Full flow in [`ai-scoring.md`](./ai-scoring.md).
+
+### `activity_events` — the unified human feed (added in `0004`)
+
+One **append-only** row per user-meaningful action (status change, promote, source
+toggle, ingestion run, …). `type` is the event (e.g. `application.status_changed`);
+`category` is check-constrained to `application | job | profile | source |
+ingestion | company | contact | outreach` and is derivable from the type prefix. `summary` is a **precomputed**
+human line stored at write time so rendering is a trivial read. `entity_type` /
+`entity_id` point loosely at the subject — `entity_id` is **nullable with no FK** so
+the log survives the entity's deletion. Indexes: `(user_id, created_at desc)` for the
+feed, `(user_id, category)` for the filter. See [`logging.md`](./logging.md).
+
+### `ingestion_runs` — operational run metrics (added in `0004`)
+
+One row per ingestion run. `trigger ∈ {manual_all, manual_source, cron}`,
+`status ∈ {ok, partial, error}`, with rolled-up `sources_run` / `jobs_fetched` /
+`jobs_new` / `jobs_updated` counts and timing (`started_at`, `finished_at`,
+`duration_ms`). The diff distinguishes **fetched vs new vs updated** (re-ingested
+rows are never labelled new). Index: `(user_id, created_at desc)`.
+
+### `ingestion_run_sources` — per-source breakdown (added in `0004`)
+
+One row per source within a run: `source_type` / `source_label`, `status ∈ {ok,
+error, skipped}`, `http_status`, the same fetched/new/updated counts, `duration_ms`,
+and a `message` (fetcher error) that has **secrets redacted before storing**. FK
+`run_id` cascades; `source_id` is `set null`; `user_id` is denormalized for RLS.
+Indexes: `(user_id, created_at desc)`, `(run_id)`, `(user_id, source_id)`.
+
+### `scoring_runs` — async AI fit-scoring runs (added in `0005`)
+
+Tracks a resumable batch-scoring run. `trigger ∈ {manual, cron}`, `status ∈ {queued,
+running, done, error, cancelled}`, with `total` / `completed` / `failed` counters,
+timing, and an `error` message. A run scores up to ~100 unscored-for-the-current-hash
+jobs in bounded chunks; the chunk endpoint bumps the counters as it progresses (this
+is the one table besides `sources` with an **UPDATE** policy beyond owner-create).
+Index: `(user_id, created_at desc)`. Full pipeline in [`ai-scoring.md`](./ai-scoring.md).
+
+### `companies` — first-class employers (added in `0006`)
+
+The anchor of the network layer. `name` is required; `website`, `location`,
+`ats_type`, and `notes` are free text. Deduped per user by a **unique index on
+`(user_id, lower(name))`** — at most one company per case-insensitive name, which is
+what makes "auto-create-or-link a company by name" idempotent when a contact is
+saved. Index `(user_id, created_at desc)` for listing. Both `contacts.company_id`
+and `applications.company_id` FK here with `on delete set null`. Writes go through
+`actions/companies.ts`; pure parse/validation lives in `src/lib/contacts.ts`.
+
+### `contacts` — the people CRM (added in `0006`)
+
+One row per person you know. `name` is required; `company_id` is a **nullable** FK
+(`set null` on company delete). `channel` reuses the **application channel
+vocabulary** (`Detachering | Brainport portal | LinkedIn | Recruiter | Direct |
+Referral | Other`, or null) as "how I met them". `email` / `linkedin_url` are
+normalized + validated in `src/lib/contacts.ts`. `last_contacted_at` (timestamptz)
+is stamped when outreach is logged (Phase 2); `next_follow_up_at` (date) drives the
+follow-up queue. Indexes: `(user_id, company_id)` for the company view and
+`(user_id, next_follow_up_at)` for the follow-up queue. Writes go through
+`actions/contacts.ts`.
+
+> **`applications.company_id`** (also added in `0006`) is a nullable FK to
+> `companies.id` (`set null`). It is **additive** — the free-text
+> `applications.company` column is kept; the migration best-effort-backfills the
+> link by matching name (never creating a company). Index `(company_id)`.
+
+### `outreach` — the touch log (added in `0007`)
+
+One row per message/touch sent (detachering DM, open-application email, follow-up).
+`channel` reuses the application channel vocabulary; `status ∈ {Sent, Replied, No
+reply, Bounced}` (default `Sent`). `subject`/`body`/`notes` are free text;
+`sent_at timestamptz default now()`. `next_bump_at` (date) is the follow-up reminder
+that surfaces on `/needs-action` — a bump is dropped from that queue once the thread
+is **resolved** (`Replied`/`Bounced`, `OUTREACH_BUMP_RESOLVED` in `constants.ts`).
+The three entity FKs (`contact_id`/`company_id`/`application_id`) are all nullable,
+`set null`. Indexes: `(user_id, next_bump_at)` (the queue), `(user_id, contact_id)`,
+`(user_id, company_id)`, `(user_id, status)`, and `(user_id, channel, status)` (added
+in `0008`, backs the channel funnel). Writes go through `actions/outreach.ts`
+(`logOutreach` / `setOutreachStatus` / `clearBump`).
 
 ---
 
 ## Row-Level Security
 
-RLS is **enabled on all six tables**, and each has four owner-only policies
-(select / insert / update / delete) of the form:
+RLS is **enabled on all fourteen tables**, and each has owner-only policies of the
+form:
 
 ```sql
 -- read
@@ -246,6 +494,12 @@ with check (auth.uid() = user_id)
 -- update
 using (auth.uid() = user_id) with check (auth.uid() = user_id)
 ```
+
+Most tables carry all four policies (select / insert / update / delete). The two
+exceptions, by design: the **append-only log tables** (`activity_events`,
+`ingestion_runs`, `ingestion_run_sources`) have **no UPDATE** policy — rows are
+written once and never edited. `scoring_runs` **does** include UPDATE, because the
+chunk endpoint bumps its `completed` / `failed` / `status` as a run progresses.
 
 Consequences worth remembering:
 
@@ -268,8 +522,11 @@ Consequences worth remembering:
 
 ## Triggers & defaults
 
-- `set_updated_at()` is a trigger function attached `before update` to all four
-  tables; it stamps `updated_at = now()` on every modification.
+- `set_updated_at()` is a trigger function attached `before update` to every table
+  that has an `updated_at` column (`jobs`, `applications`, `sources`,
+  `saved_filters`, `profiles`, `user_secrets`, `companies`, `contacts`, `outreach`);
+  it stamps `updated_at = now()` on every modification. The append-only log tables and
+  `scoring_runs` have **no** `updated_at` (they're not edited that way).
 - UUIDs default to `gen_random_uuid()` (pgcrypto, enabled in the migration).
 - `created_at` / `ingested_at` default to `now()`.
 
